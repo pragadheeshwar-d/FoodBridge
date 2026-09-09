@@ -522,18 +522,22 @@ def create_app(config_class=Config):
 
     with app.app_context():
         import time as _time
-        for _attempt in range(3):
+        for _attempt in range(5):
             try:
                 db.create_all()
                 break
             except Exception as _exc:
                 _msg = str(_exc)
-                if '1684' in _msg or 'DDL' in _msg or 'being modified' in _msg:
+                if any(k in _msg.lower() for k in ['1684', 'ddl', 'being modified', 'connection', 'timeout', 'refused', 'temporarily unavailable']) and _attempt < 4:
                     app.logger.warning(
-                        f'db.create_all() hit DDL lock (attempt {_attempt + 1}/3), retrying in 2s...'
+                        f'db.create_all() waiting for database (attempt {_attempt + 1}/5): {_msg}. Retrying in 3s...'
                     )
-                    _time.sleep(2)
+                    _time.sleep(3)
                 else:
+                    if 'password authentication failed' in _msg.lower():
+                        app.logger.critical(
+                            'DATABASE AUTHENTICATION FAILED: Check your DATABASE_URL username and password in Render environment variables!'
+                        )
                     raise
         ensure_phase2_schema(app)
         ensure_phase3_schema(app)

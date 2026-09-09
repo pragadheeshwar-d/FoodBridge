@@ -1,3 +1,9 @@
+databases:
+  - name: foodbridge-db
+    databaseName: foodbridge
+    user: foodbridge
+    plan: free
+
 services:
   - type: web
     name: foodbridge-api
@@ -8,12 +14,16 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: foodbridge-db
+          property: connectionString
       - key: SECRET_KEY
-        sync: false
+        generateValue: true
       - key: JWT_SECRET_KEY
-        sync: false
+        generateValue: true
       - key: FLASK_ENV
         value: production
       - key: FRONTEND_URL
@@ -24,6 +34,8 @@ services:
         value: "587"
       - key: MAIL_USE_TLS
         value: "True"
+      - key: MAIL_USE_SSL
+        value: "False"
       - key: MAIL_USERNAME
         sync: false
       - key: MAIL_PASSWORD

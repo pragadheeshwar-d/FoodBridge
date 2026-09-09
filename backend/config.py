@@ -20,9 +20,13 @@ def _parse_duration(value: str | None, default: timedelta) -> timedelta:
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'foodbridge-secret-key-change-in-production')
 
-    database_url = os.environ.get('DATABASE_URL') or 'mysql+pymysql://root:password@localhost/foodbridge'
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    _raw_db_url = (os.environ.get('DATABASE_URL') or '').strip().strip("'").strip('"')
+    if not _raw_db_url:
+        database_url = 'mysql+pymysql://root:password@localhost/foodbridge'
+    elif _raw_db_url.startswith('postgres://'):
+        database_url = _raw_db_url.replace('postgres://', 'postgresql://', 1)
+    else:
+        database_url = _raw_db_url
 
     SQLALCHEMY_DATABASE_URI = database_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
