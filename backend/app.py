@@ -84,6 +84,23 @@ def seed_admin_user(app: Flask) -> None:
         db.session.commit()
 
 
+def auto_verify_all_users(app: Flask) -> None:
+    from models import User
+
+    with app.app_context():
+        try:
+            unverified = User.query.filter((User.verified == False) | (User.status == 'pending')).all()
+            for u in unverified:
+                u.verified = True
+                if u.status == 'pending':
+                    u.status = 'approved'
+                if getattr(u, 'account_status', None) == 'pending':
+                    u.account_status = 'approved'
+            db.session.commit()
+        except Exception as e:
+            app.logger.warning(f'Could not auto-verify existing users: {e}')
+
+
 def ensure_phase2_schema(app: Flask) -> None:
     from sqlalchemy import inspect
 
@@ -548,6 +565,7 @@ def create_app(config_class=Config):
         ensure_two_way_bridge_schema(app)
         ensure_conversation_schema(app)
         seed_admin_user(app)
+        auto_verify_all_users(app)
 
     import socket_events  # noqa: F401
 

@@ -10,6 +10,8 @@ import re
 from datetime import datetime, timedelta
 from uuid import uuid4
 
+import threading
+
 import bcrypt
 from flask import Blueprint, current_app, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
@@ -149,27 +151,32 @@ def _verification_url(token: str) -> str:
 def _send_verification_email(user: User) -> None:
     if not user.verification_token:
         return
-    try:
-        msg = Message(
-            subject='Verify your FoodBridge account',
-            recipients=[user.email],
-            body=(
-                f'Hello {user.name},\n\n'
-                f'Please verify your FoodBridge account by opening this link:\n{_verification_url(user.verification_token)}\n\n'
-                'If you did not create this account, you can ignore this email.'
-            ),
-            html=(
-                f'<p>Hello {user.name},</p>'
-                f'<p>Please verify your FoodBridge account by clicking the button below.</p>'
-                f'<p><a href="{_verification_url(user.verification_token)}" '
-                f'style="display:inline-block;padding:12px 18px;background:#2E7D32;color:#fff;text-decoration:none;border-radius:8px;">Verify Account</a></p>'
-            ),
-        )
-        mail = current_app.extensions.get('mail')
-        if mail:
-            mail.send(msg)
-    except Exception:
-        current_app.logger.exception('Failed to send verification email for user_id=%s', user.id)
+    app = current_app._get_current_object()
+    def _run():
+        with app.app_context():
+            try:
+                msg = Message(
+                    subject='Verify your FoodBridge account',
+                    recipients=[user.email],
+                    body=(
+                        f'Hello {user.name},\n\n'
+                        f'Please verify your FoodBridge account by opening this link:\n{_verification_url(user.verification_token)}\n\n'
+                        'If you did not create this account, you can ignore this email.'
+                    ),
+                    html=(
+                        f'<p>Hello {user.name},</p>'
+                        f'<p>Please verify your FoodBridge account by clicking the button below.</p>'
+                        f'<p><a href="{_verification_url(user.verification_token)}" '
+                        f'style="display:inline-block;padding:12px 18px;background:#2E7D32;color:#fff;text-decoration:none;border-radius:8px;">Verify Account</a></p>'
+                    ),
+                )
+                mail = app.extensions.get('mail')
+                if mail:
+                    mail.send(msg)
+            except Exception:
+                app.logger.warning('Could not send verification email for user_id=%s (SMTP timeout or unconfigured)', user.id)
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def _reset_url(token: str) -> str:
@@ -180,29 +187,32 @@ def _reset_url(token: str) -> str:
 def _send_reset_email(user: User) -> None:
     if not user.reset_token:
         return
-    try:
-        msg = Message(
-            subject='Reset your FoodBridge password',
-            recipients=[user.email],
-            body=(
-                f'Hello {user.name},\n\n'
-                f'Use this link to reset your FoodBridge password:\n{_reset_url(user.reset_token)}\n\n'
-                'If you did not request a reset, you can ignore this email.'
-            ),
-            html=(
-                f'<p>Hello {user.name},</p>'
-                f'<p>Use the button below to reset your FoodBridge password.</p>'
-                f'<p><a href="{_reset_url(user.reset_token)}" '
-                f'style="display:inline-block;padding:12px 18px;background:#2E7D32;color:#fff;text-decoration:none;border-radius:8px;">Reset Password</a></p>'
-            ),
-        )
-        mail = current_app.extensions.get('mail')
-        if mail:
-            mail.send(msg)
-        else:
-            current_app.logger.warning('Mail extension not available; reset email not sent for user_id=%s', user.id)
-    except Exception:
-        current_app.logger.exception('Failed to send password reset email for user_id=%s', user.id)
+    app = current_app._get_current_object()
+    def _run():
+        with app.app_context():
+            try:
+                msg = Message(
+                    subject='Reset your FoodBridge password',
+                    recipients=[user.email],
+                    body=(
+                        f'Hello {user.name},\n\n'
+                        f'Use this link to reset your FoodBridge password:\n{_reset_url(user.reset_token)}\n\n'
+                        'If you did not request a reset, you can ignore this email.'
+                    ),
+                    html=(
+                        f'<p>Hello {user.name},</p>'
+                        f'<p>Use the button below to reset your FoodBridge password.</p>'
+                        f'<p><a href="{_reset_url(user.reset_token)}" '
+                        f'style="display:inline-block;padding:12px 18px;background:#2E7D32;color:#fff;text-decoration:none;border-radius:8px;">Reset Password</a></p>'
+                    ),
+                )
+                mail = app.extensions.get('mail')
+                if mail:
+                    mail.send(msg)
+            except Exception:
+                app.logger.warning('Could not send reset email for user_id=%s', user.id)
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 @auth_bp.route('/register', methods=['POST'])
@@ -248,12 +258,12 @@ def register():
         organization=organization,
         phone=phone or None,
         address=address or None,
-        verified=False,
+        verified=True,
         verification_token=str(uuid4()),
         verification_expiry=datetime.utcnow() + timedelta(days=1),
-        status='pending',
-        account_status='pending',
-        verification_status='PENDING',
+        status='approved',
+        account_status='approved',
+        verification_status='VERIFIED',
     )
     db.session.add(user)
     db.session.commit()
