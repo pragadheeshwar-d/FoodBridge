@@ -42,3 +42,5 @@ services:
         sync: false
       - key: MAIL_DEFAULT_SENDER
         sync: false
+      - key: RESEND_API_KEY
+        sync: false

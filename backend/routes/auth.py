@@ -10,7 +10,9 @@ import re
 from datetime import datetime, timedelta
 from uuid import uuid4
 
+import json
 import threading
+import urllib.request
 
 import bcrypt
 from flask import Blueprint, current_app, request
@@ -148,33 +150,77 @@ def _verification_url(token: str) -> str:
     return f'{frontend}/auth/verify-email?token={token}'
 
 
+def _send_email_message(to_email: str, subject: str, text_body: str, html_body: str, app) -> bool:
+    resend_api_key = os.environ.get('RESEND_API_KEY')
+    if resend_api_key and resend_api_key.strip():
+        try:
+            url = 'https://api.resend.com/emails'
+            headers = {
+                'Authorization': f'Bearer {resend_api_key.strip()}',
+                'Content-Type': 'application/json',
+                'User-Agent': 'FoodBridge/1.0',
+            }
+            from_sender = os.environ.get('MAIL_DEFAULT_SENDER') or 'FoodBridge <onboarding@resend.dev>'
+            if '@resend.dev' not in from_sender and not os.environ.get('RESEND_CUSTOM_DOMAIN'):
+                from_sender = 'FoodBridge <onboarding@resend.dev>'
+            payload = {
+                'from': from_sender,
+                'to': [to_email],
+                'subject': subject,
+                'text': text_body,
+                'html': html_body,
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers=headers,
+                method='POST',
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if 200 <= resp.status < 300:
+                    app.logger.info('Email sent successfully via Resend API to %s', to_email)
+                    return True
+        except Exception as e:
+            app.logger.warning('Resend API send failed: %s', e)
+
+    # Fallback to SMTP
+    try:
+        mail = app.extensions.get('mail')
+        if mail:
+            msg = Message(
+                subject=subject,
+                recipients=[to_email],
+                body=text_body,
+                html=html_body,
+            )
+            mail.send(msg)
+            app.logger.info('Email sent successfully via SMTP to %s', to_email)
+            return True
+    except Exception as e:
+        app.logger.warning('SMTP send failed: %s', e)
+
+    return False
+
+
 def _send_verification_email(user: User) -> None:
     if not user.verification_token:
         return
     app = current_app._get_current_object()
     def _run():
         with app.app_context():
-            try:
-                msg = Message(
-                    subject='Verify your FoodBridge account',
-                    recipients=[user.email],
-                    body=(
-                        f'Hello {user.name},\n\n'
-                        f'Please verify your FoodBridge account by opening this link:\n{_verification_url(user.verification_token)}\n\n'
-                        'If you did not create this account, you can ignore this email.'
-                    ),
-                    html=(
-                        f'<p>Hello {user.name},</p>'
-                        f'<p>Please verify your FoodBridge account by clicking the button below.</p>'
-                        f'<p><a href="{_verification_url(user.verification_token)}" '
-                        f'style="display:inline-block;padding:12px 18px;background:#2E7D32;color:#fff;text-decoration:none;border-radius:8px;">Verify Account</a></p>'
-                    ),
-                )
-                mail = app.extensions.get('mail')
-                if mail:
-                    mail.send(msg)
-            except Exception:
-                app.logger.warning('Could not send verification email for user_id=%s (SMTP timeout or unconfigured)', user.id)
+            subject = 'Verify your FoodBridge account'
+            text_body = (
+                f'Hello {user.name},\n\n'
+                f'Please verify your FoodBridge account by opening this link:\n{_verification_url(user.verification_token)}\n\n'
+                'If you did not create this account, you can ignore this email.'
+            )
+            html_body = (
+                f'<p>Hello {user.name},</p>'
+                f'<p>Please verify your FoodBridge account by clicking the button below.</p>'
+                f'<p><a href="{_verification_url(user.verification_token)}" '
+                f'style="display:inline-block;padding:12px 18px;background:#2E7D32;color:#fff;text-decoration:none;border-radius:8px;">Verify Account</a></p>'
+            )
+            _send_email_message(user.email, subject, text_body, html_body, app)
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -190,27 +236,19 @@ def _send_reset_email(user: User) -> None:
     app = current_app._get_current_object()
     def _run():
         with app.app_context():
-            try:
-                msg = Message(
-                    subject='Reset your FoodBridge password',
-                    recipients=[user.email],
-                    body=(
-                        f'Hello {user.name},\n\n'
-                        f'Use this link to reset your FoodBridge password:\n{_reset_url(user.reset_token)}\n\n'
-                        'If you did not request a reset, you can ignore this email.'
-                    ),
-                    html=(
-                        f'<p>Hello {user.name},</p>'
-                        f'<p>Use the button below to reset your FoodBridge password.</p>'
-                        f'<p><a href="{_reset_url(user.reset_token)}" '
-                        f'style="display:inline-block;padding:12px 18px;background:#2E7D32;color:#fff;text-decoration:none;border-radius:8px;">Reset Password</a></p>'
-                    ),
-                )
-                mail = app.extensions.get('mail')
-                if mail:
-                    mail.send(msg)
-            except Exception:
-                app.logger.warning('Could not send reset email for user_id=%s', user.id)
+            subject = 'Reset your FoodBridge password'
+            text_body = (
+                f'Hello {user.name},\n\n'
+                f'Use this link to reset your FoodBridge password:\n{_reset_url(user.reset_token)}\n\n'
+                'If you did not request a reset, you can ignore this email.'
+            )
+            html_body = (
+                f'<p>Hello {user.name},</p>'
+                f'<p>Use the button below to reset your FoodBridge password.</p>'
+                f'<p><a href="{_reset_url(user.reset_token)}" '
+                f'style="display:inline-block;padding:12px 18px;background:#2E7D32;color:#fff;text-decoration:none;border-radius:8px;">Reset Password</a></p>'
+            )
+            _send_email_message(user.email, subject, text_body, html_body, app)
 
     threading.Thread(target=_run, daemon=True).start()
 
