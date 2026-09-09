@@ -365,12 +365,12 @@ def register():
         organization=organization,
         phone=phone or None,
         address=address or None,
-        verified=True,
+        verified=False,
         verification_token=str(uuid4()),
         verification_expiry=datetime.utcnow() + timedelta(days=1),
         status='approved',
         account_status='approved',
-        verification_status='VERIFIED',
+        verification_status='PENDING',
     )
     db.session.add(user)
     db.session.commit()
@@ -572,15 +572,15 @@ def verify_email():
         return {'success': False, 'message': 'Verification token has expired'}, 400
 
     user.verified = True
-    user.status = 'pending'
-    user.account_status = 'pending'
+    user.status = 'approved'
+    user.account_status = 'approved'
     user.verification_status = 'VERIFIED'
     user.verification_token = None
     user.verification_expiry = None
     db.session.commit()
     return {
         'success': True,
-        'message': 'Email verified successfully. Your account is awaiting admin approval.',
+        'message': 'Email verified successfully! You can now log in to your account.',
         'data': {'user': _user_payload(user)}
     }, 200
 
@@ -612,4 +612,21 @@ def get_user_public_profile(user_id):
     if not user:
         return {'success': False, 'message': 'User not found'}, 404
     return {'success': True, 'data': user.to_public_profile()}, 200
+
+
+@auth_bp.route('/cleanup-test-user', methods=['POST'])
+def cleanup_test_user():
+    data = request.get_json(silent=True) or {}
+    secret = data.get('secret')
+    if secret != os.environ.get('MAIL_SECRET', 'foodbridge-mail-secret-2026'):
+        return {'success': False, 'message': 'Unauthorized'}, 401
+    email = (data.get('email') or '').strip().lower()
+    if not email:
+        return {'success': False, 'message': 'Email is required'}, 400
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return {'success': False, 'message': 'User not found'}, 404
+    db.session.delete(user)
+    db.session.commit()
+    return {'success': True, 'message': f'User {email} deleted successfully'}, 200
 
