@@ -78,3 +78,4 @@ MAIL_DEFAULT_SENDER=noreply@foodbridge.com
 - The live schema is created by SQLAlchemy on startup, with local upgrade helpers in `backend/app.py`.
 - A readable schema reference is available at `database/schema.sql`.
 - The frontend talks to the backend through `src/lib/api.ts`.
+# FoodBridge
