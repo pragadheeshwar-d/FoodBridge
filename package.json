@@ -17,6 +17,7 @@
     "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3",
     "lucide-react": "^0.468.0",
+    "nodemailer": "^10.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",
@@ -25,6 +26,7 @@
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

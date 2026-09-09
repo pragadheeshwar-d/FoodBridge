@@ -151,7 +151,37 @@ def _verification_url(token: str) -> str:
 
 
 def _send_email_message(to_email: str, subject: str, text_body: str, html_body: str, app) -> bool:
-    # 1. Try Resend API (HTTPS port 443)
+    # 1. Try Vercel Serverless Email Relay (uses Gmail SMTP port 465, unblocked on Vercel -> sends to ANY recipient!)
+    frontend_url = current_app.config.get('FRONTEND_URL') or 'https://food-bridge-sage.vercel.app'
+    relay_url = f"{frontend_url.rstrip('/')}/api/mail"
+    try:
+        payload = {
+            'to': to_email,
+            'subject': subject,
+            'text': text_body,
+            'html': html_body,
+            'secret': os.environ.get('MAIL_SECRET', 'foodbridge-mail-secret-2026'),
+        }
+        req = urllib.request.Request(
+            relay_url,
+            data=json.dumps(payload).encode('utf-8'),
+            headers={
+                'Content-Type': 'application/json',
+                'User-Agent': 'FoodBridge/1.0',
+            },
+            method='POST',
+        )
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            if 200 <= resp.status < 300:
+                app.logger.info('Email sent successfully via Vercel Gmail Relay to %s', to_email)
+                return True
+    except urllib.error.HTTPError as e:
+        err_text = e.read().decode('utf-8', errors='ignore')
+        app.logger.warning('Vercel mail relay failed (HTTP %s): %s', e.code, err_text)
+    except Exception as e:
+        app.logger.warning('Vercel mail relay failed: %s', e)
+
+    # 2. Try Resend API (HTTPS port 443)
     resend_api_key = os.environ.get('RESEND_API_KEY')
     if resend_api_key and resend_api_key.strip():
         try:
