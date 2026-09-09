@@ -39,3 +39,5 @@ dev.err.log
 backend/instance/
 *.db
 *.sqlite
+.vercel
+.env*
