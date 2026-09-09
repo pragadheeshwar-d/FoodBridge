@@ -149,6 +149,18 @@ export function DashboardLayout({ children, navItems, role }: DashboardLayoutPro
                   )
                 })}
               </nav>
+              <div className="p-4 border-t border-gray-800 mt-auto">
+                <button
+                  onClick={() => {
+                    setSidebarOpen(false)
+                    logout()
+                  }}
+                  className="sidebar-link w-full text-left text-red-400 hover:text-red-300"
+                >
+                  <LogOut className="w-5 h-5" />
+                  <span>Sign out</span>
+                </button>
+              </div>
             </motion.aside>
           </>
         )}

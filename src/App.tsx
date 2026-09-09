@@ -1,5 +1,5 @@
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import LandingPage from './pages/LandingPage'
 import DonorDashboard from './pages/donor/DonorDashboard'
 import AddDonationPage from './pages/donor/AddDonationPage'
@@ -38,10 +38,9 @@ import { useAuth } from './context/AuthContext'
 function PageWrapper({ children }: { children: React.ReactNode }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
     >
       {children}
     </motion.div>
@@ -60,10 +59,9 @@ export default function App() {
         : '/donor'
 
   return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/" element={<PageWrapper><LandingPage /></PageWrapper>} />
-        <Route path="/auth/login" element={<PageWrapper><LoginGatewayPage /></PageWrapper>} />
+    <Routes location={location}>
+      <Route path="/" element={<PageWrapper><LandingPage /></PageWrapper>} />
+      <Route path="/auth/login" element={<PageWrapper><LoginGatewayPage /></PageWrapper>} />
         <Route path="/auth/login/donor" element={<PageWrapper><DonorLoginPage /></PageWrapper>} />
         <Route path="/auth/login/receiver" element={<PageWrapper><ReceiverLoginPage /></PageWrapper>} />
         <Route path="/auth/login/admin" element={<PageWrapper><AdminLoginPage /></PageWrapper>} />
@@ -315,6 +313,5 @@ export default function App() {
           }
         />
       </Routes>
-    </AnimatePresence>
   )
 }

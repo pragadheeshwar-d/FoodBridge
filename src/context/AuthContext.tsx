@@ -193,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } finally {
           clearSession()
           setUser(null)
+          window.location.replace('/')
         }
       },
 
