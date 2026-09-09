@@ -10,8 +10,8 @@ let socket: Socket | null = null
 export function getSocket(): Socket {
   if (!socket) {
     const token = localStorage.getItem('token') ?? undefined
-    const socketBaseUrl = BASE_URL || window.location.origin
-    const transports = import.meta.env.DEV ? ['polling'] : ['websocket', 'polling']
+    const socketBaseUrl = (import.meta.env.VITE_SOCKET_URL as string) || BASE_URL || window.location.origin
+    const transports = ['websocket', 'polling']
     socket = io(socketBaseUrl, {
       auth: { token },
       transports,

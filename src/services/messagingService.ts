@@ -24,6 +24,10 @@ export interface ChatMessage {
   pickupId?: string
   needId?: string
   hasCoordinationCard?: boolean
+  messageType?: 'text' | 'call_system' | string
+  callSessionId?: string | number
+  callStatus?: string
+  callDuration?: number
   context?: {
     type?: string
     id?: number
@@ -174,6 +178,10 @@ export function normalizeChatMessage(raw: any, currentUserId?: string): ChatMess
     donationId: raw.donation_id ? String(raw.donation_id) : undefined,
     pickupId: raw.pickup_id ? String(raw.pickup_id) : undefined,
     needId: raw.need_id ? String(raw.need_id) : undefined,
+    messageType: raw.message_type || (raw.message?.startsWith('📞') ? 'call_system' : 'text'),
+    callSessionId: raw.call_session_id,
+    callStatus: raw.call_status,
+    callDuration: raw.call_duration,
     hasCoordinationCard: hasCard,
     context: raw.context,
   }

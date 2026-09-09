@@ -437,6 +437,46 @@ class Conversation(db.Model):
         }
 
 
+class CallSession(db.Model):
+    __tablename__ = 'call_sessions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    call_id = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id', ondelete='CASCADE'), nullable=False, index=True)
+    caller_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    receiver_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    status = db.Column(db.String(30), default='ringing', nullable=False, index=True)  # ringing, accepted, declined, missed, completed, failed
+    started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    answered_at = db.Column(db.DateTime, nullable=True)
+    ended_at = db.Column(db.DateTime, nullable=True)
+    duration = db.Column(db.Integer, default=0, nullable=False)  # in seconds
+
+    # Relationships
+    conversation = db.relationship('Conversation', foreign_keys=[conversation_id], backref=db.backref('call_sessions', lazy='dynamic', cascade='all, delete-orphan'))
+    caller = db.relationship('User', foreign_keys=[caller_id], backref=db.backref('outgoing_calls', lazy='dynamic'))
+    receiver = db.relationship('User', foreign_keys=[receiver_id], backref=db.backref('incoming_calls', lazy='dynamic'))
+
+    def to_dict(self):
+        caller = self.caller or User.query.get(self.caller_id)
+        receiver = self.receiver or User.query.get(self.receiver_id)
+        return {
+            'id': self.id,
+            'call_id': self.call_id,
+            'conversation_id': self.conversation_id,
+            'caller_id': self.caller_id,
+            'receiver_id': self.receiver_id,
+            'caller_name': (caller.organization or caller.name) if caller else 'Unknown Caller',
+            'caller_avatar': caller.profile_image if caller else None,
+            'receiver_name': (receiver.organization or receiver.name) if receiver else 'Unknown Receiver',
+            'receiver_avatar': receiver.profile_image if receiver else None,
+            'status': self.status,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'answered_at': self.answered_at.isoformat() if self.answered_at else None,
+            'ended_at': self.ended_at.isoformat() if self.ended_at else None,
+            'duration': self.duration,
+        }
+
+
 class Message(db.Model):
     __tablename__ = 'messages'
 
@@ -448,8 +488,12 @@ class Message(db.Model):
     need_id = db.Column(db.Integer, nullable=True)
     pickup_id = db.Column(db.Integer, db.ForeignKey('pickup_requests.id', ondelete='SET NULL'), nullable=True)
     message = db.Column(db.Text, nullable=False)
+    message_type = db.Column(db.String(30), default='text', nullable=True)
+    call_session_id = db.Column(db.Integer, db.ForeignKey('call_sessions.id', ondelete='SET NULL'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_read = db.Column(db.Boolean, default=False)
+
+    call_session = db.relationship('CallSession', foreign_keys=[call_session_id], backref=db.backref('system_messages', lazy='dynamic'))
 
     def to_dict(self):
         sender = User.query.get(self.sender_id)
@@ -489,6 +533,8 @@ class Message(db.Model):
                     'pickup_address': p.donation.pickup_address,
                 }
 
+        is_call_msg = (self.message_type == 'call_system') or (bool(self.message and self.message.startswith('📞')))
+
         return {
             'id': self.id,
             'conversation_id': self.conversation_id,
@@ -499,6 +545,10 @@ class Message(db.Model):
             'sender_role': sender.role if sender else None,
             'receiver_role': receiver.role if receiver else None,
             'message': self.message,
+            'message_type': 'call_system' if is_call_msg else (self.message_type or 'text'),
+            'call_session_id': self.call_session_id,
+            'call_status': self.call_session.status if self.call_session else None,
+            'call_duration': self.call_session.duration if self.call_session else None,
             'donation_id': self.donation_id,
             'need_id': self.need_id,
             'pickup_id': self.pickup_id,

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
+import { useCall } from '../../context/CallContext'
 import {
   type ChatMessage,
   type ChatConversation,
@@ -39,6 +40,7 @@ export interface ChatInterfaceProps {
 export function ChatInterface({ role: propRole }: ChatInterfaceProps) {
   const { toast } = useToast()
   const { user } = useAuth()
+  const { startCall, callState } = useCall()
   const location = useLocation()
 
   // Determine current active user role (donor or receiver)
@@ -707,10 +709,24 @@ export function ChatInterface({ role: propRole }: ChatInterfaceProps) {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => toast(`Calling ${activeConversation.name}...`, 'info')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700/80 bg-slate-900/70 hover:bg-slate-800 text-xs font-semibold text-slate-200 transition-colors"
+                  onClick={() => {
+                    if (!activeConversation) return
+                    void startCall(
+                      {
+                        id: activeConversation.participantId,
+                        name: activeConversation.name,
+                        avatar: null,
+                        role: activeConversation.participantType === 'DONOR' ? 'donor' : 'receiver',
+                      },
+                      activeConversation.id
+                    )
+                  }}
+                  disabled={callState !== 'idle'}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700/80 bg-slate-900/70 hover:bg-slate-800 text-xs font-semibold text-slate-200 transition-colors ${
+                    callState !== 'idle' ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                 >
-                  <Phone className="w-3.5 h-3.5 text-slate-400" />
+                  <Phone className="w-3.5 h-3.5 text-emerald-400" />
                   <span className="hidden sm:inline">Call</span>
                 </button>
 
@@ -823,61 +839,71 @@ export function ChatInterface({ role: propRole }: ChatInterfaceProps) {
                         </div>
                       )}
 
-                      <div className={`flex flex-col ${isOutgoing ? 'items-end' : 'items-start'}`}>
-                        <div
-                          className={`max-w-[85%] sm:max-w-[70%] rounded-2xl p-3.5 shadow-sm text-xs sm:text-sm leading-relaxed ${
-                            isOutgoing
-                              ? 'bg-emerald-950/40 border border-emerald-500/30 text-slate-100 rounded-br-sm'
-                              : 'bg-[#141E30] border border-slate-700/60 text-slate-100 rounded-bl-sm'
-                          }`}
-                        >
-                          <p className="whitespace-pre-line">{msg.text}</p>
-
-                          <div
-                            className={`flex items-center gap-1.5 mt-1.5 text-[10px] ${
-                              isOutgoing
-                                ? 'justify-end text-emerald-400/80'
-                                : 'justify-start text-slate-400'
-                            }`}
-                          >
-                            <span>{msg.timestamp}</span>
-                            {isOutgoing && <CheckCheck className="w-3 h-3 text-emerald-400" />}
+                      {msg.messageType === 'call_system' || msg.text?.startsWith('📞') ? (
+                        <div className="flex items-center justify-center my-3 w-full">
+                          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-slate-800 text-xs text-slate-300 shadow-sm backdrop-blur-sm">
+                            <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="font-medium">{msg.text}</span>
+                            <span className="text-[10px] text-slate-500 ml-1">{msg.timestamp}</span>
                           </div>
                         </div>
+                      ) : (
+                        <div className={`flex flex-col ${isOutgoing ? 'items-end' : 'items-start'}`}>
+                          <div
+                            className={`max-w-[85%] sm:max-w-[70%] rounded-2xl p-3.5 shadow-sm text-xs sm:text-sm leading-relaxed ${
+                              isOutgoing
+                                ? 'bg-emerald-950/40 border border-emerald-500/30 text-slate-100 rounded-br-sm'
+                                : 'bg-[#141E30] border border-slate-700/60 text-slate-100 rounded-bl-sm'
+                            }`}
+                          >
+                            <p className="whitespace-pre-line">{msg.text}</p>
 
-                        {/* Embedded Donation / Pickup Context Card */}
-                        {msg.hasCoordinationCard && activeConversation.pickupDetails && (
-                          <div className="mt-3 w-full max-w-[85%] sm:max-w-[70%] p-3.5 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div className="flex items-start gap-3">
-                              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 mt-0.5">
-                                <Calendar className="w-4 h-4" />
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-bold text-white">
-                                    📅 {activeConversation.pickupDetails.status}
-                                  </span>
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold border border-emerald-500/30">
-                                    {activeConversation.pickupDetails.time}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-slate-300 mt-1">
-                                  {activeConversation.pickupDetails.quantity} •{' '}
-                                  {activeConversation.pickupDetails.location}
-                                </p>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => setShowDonationModal(true)}
-                              className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition-all shrink-0 text-center"
+                            <div
+                              className={`flex items-center gap-1.5 mt-1.5 text-[10px] ${
+                                isOutgoing
+                                  ? 'justify-end text-emerald-400/80'
+                                  : 'justify-start text-slate-400'
+                              }`}
                             >
-                              View Donation Details
-                            </button>
+                              <span>{msg.timestamp}</span>
+                              {isOutgoing && <CheckCheck className="w-3 h-3 text-emerald-400" />}
+                            </div>
                           </div>
-                        )}
-                      </div>
+
+                          {/* Embedded Donation / Pickup Context Card */}
+                          {msg.hasCoordinationCard && activeConversation.pickupDetails && (
+                            <div className="mt-3 w-full max-w-[85%] sm:max-w-[70%] p-3.5 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="flex items-start gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                                  <Calendar className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-white">
+                                      📅 {activeConversation.pickupDetails.status}
+                                    </span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold border border-emerald-500/30">
+                                      {activeConversation.pickupDetails.time}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-300 mt-1">
+                                    {activeConversation.pickupDetails.quantity} •{' '}
+                                    {activeConversation.pickupDetails.location}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => setShowDonationModal(true)}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition-all shrink-0 text-center"
+                              >
+                                View Donation Details
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </React.Fragment>
                   )
                 })

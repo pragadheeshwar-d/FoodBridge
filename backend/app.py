@@ -369,6 +369,37 @@ def ensure_conversation_schema(app: Flask) -> None:
             db.session.rollback()
 
 
+def ensure_call_schema(app: Flask) -> None:
+    from sqlalchemy import inspect
+    with app.app_context():
+        from models import CallSession
+        inspector = inspect(db.engine)
+        table_names = inspector.get_table_names()
+
+        if 'call_sessions' not in table_names:
+            try:
+                CallSession.__table__.create(db.engine, checkfirst=True)
+            except Exception as e:
+                app.logger.warning(f"Failed to create call_sessions table: {e}")
+
+        if 'messages' in table_names:
+            columns = {column['name'] for column in inspector.get_columns('messages')}
+            if 'message_type' not in columns:
+                try:
+                    db.session.execute(text("ALTER TABLE messages ADD COLUMN message_type VARCHAR(30) DEFAULT 'text'"))
+                    db.session.commit()
+                except Exception as e:
+                    app.logger.warning(f"Failed to add message_type to messages: {e}")
+                    db.session.rollback()
+
+            if 'call_session_id' not in columns:
+                try:
+                    db.session.execute(text("ALTER TABLE messages ADD COLUMN call_session_id INT NULL"))
+                    db.session.commit()
+                except Exception as e:
+                    app.logger.warning(f"Failed to add call_session_id to messages: {e}")
+                    db.session.rollback()
+
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -393,16 +424,17 @@ def create_app(config_class=Config):
         'http://localhost:4173',
         'http://127.0.0.1:4173',
         'http://localhost:3000',
+        re.compile(r'^https:\/\/.*\.vercel\.app$'),
     ]
     frontend_url = os.environ.get('FRONTEND_URL')
-    if frontend_url:
+    if frontend_url and frontend_url not in allowed_origins:
         allowed_origins.append(frontend_url)
 
     db.init_app(app)
     jwt.init_app(app)
     mail.init_app(app)
     migrate.init_app(app, db)
-    cors.init_app(app, resources={r'/api/*': {'origins': '*'}}, supports_credentials=True)
+    cors.init_app(app, resources={r'/api/*': {'origins': allowed_origins}}, supports_credentials=True)
     socketio.init_app(
         app,
         cors_allowed_origins='*',
@@ -564,6 +596,7 @@ def create_app(config_class=Config):
         ensure_admin_approval_schema(app)
         ensure_two_way_bridge_schema(app)
         ensure_conversation_schema(app)
+        ensure_call_schema(app)
         seed_admin_user(app)
         auto_verify_all_users(app)
 

@@ -8,7 +8,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import or_, and_
 from extensions import db, socketio
-from models import Conversation, Message, User, Donation, PickupRequest, FoodNeed, Notification
+from models import Conversation, Message, User, Donation, PickupRequest, FoodNeed, Notification, CallSession
 from services.realtime import emit_message, emit_notification
 
 chat_bp = Blueprint('chat', __name__)
@@ -491,4 +491,23 @@ def list_chat_users():
         partners = User.query.filter(User.id.in_(partner_ids), User.status == 'approved').all() if partner_ids else []
 
     return jsonify([u.to_dict() for u in partners]), 200
+
+
+@chat_bp.route('/conversations/<int:conv_id>/calls', methods=['GET'])
+@jwt_required()
+def get_conversation_calls(conv_id: int):
+    """Retrieve call history for a conversation with authorization check."""
+    user, err = _get_authenticated_user()
+    if err:
+        return err
+
+    conv = Conversation.query.get(conv_id)
+    if not conv:
+        return jsonify({'success': False, 'message': 'Conversation not found'}), 404
+
+    if user.id not in (conv.donor_id, conv.receiver_id):
+        return jsonify({'success': False, 'message': 'Unauthorized to view calls in this conversation'}), 403
+
+    calls = CallSession.query.filter_by(conversation_id=conv.id).order_by(CallSession.started_at.desc()).all()
+    return jsonify({'success': True, 'calls': [c.to_dict() for c in calls]}), 200
 
