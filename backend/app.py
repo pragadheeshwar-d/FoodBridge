@@ -595,8 +595,8 @@ def create_app(config_class=Config):
         ensure_automated_verification_schema(app)
         ensure_admin_approval_schema(app)
         ensure_two_way_bridge_schema(app)
-        ensure_conversation_schema(app)
         ensure_call_schema(app)
+        ensure_conversation_schema(app)
         seed_admin_user(app)
         auto_verify_all_users(app)
 
