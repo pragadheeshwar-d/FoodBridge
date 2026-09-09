@@ -27,7 +27,7 @@ services:
       - key: FLASK_ENV
         value: production
       - key: FRONTEND_URL
-        sync: false
+        value: https://food-bridge-sage.vercel.app
       - key: MAIL_SERVER
         value: smtp.gmail.com
       - key: MAIL_PORT
