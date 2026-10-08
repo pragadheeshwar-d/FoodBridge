@@ -1317,37 +1317,47 @@ export default {
       // --- 9. CHAT & MESSAGING ENDPOINTS ---
 
       if (path === '/api/chat/conversations') {
-        const donorUser = memoryStore.users.find(u => u.role === 'donor') || memoryStore.users[1];
-        const recvUser = memoryStore.users.find(u => u.role === 'receiver') || memoryStore.users[2];
-        const lastMsg = memoryStore.messages[memoryStore.messages.length - 1] || {
-          message: 'Hello! The food packages are ready for pickup.',
-          created_at: new Date().toISOString()
-        };
+        const myId = currentUser ? currentUser.id : null;
+        if (!myId) {
+          return jsonResponse({ success: true, data: [], conversations: [] });
+        }
 
-        const isCurrentDonor = currentUser ? currentUser.role === 'donor' : false;
-        const partnerUser = isCurrentDonor ? recvUser : donorUser;
+        // Find all distinct conversation partner IDs from real messages
+        const partnerIds = new Set();
+        for (const m of memoryStore.messages) {
+          if (m.sender_id === myId) partnerIds.add(m.receiver_id);
+          if (m.receiver_id === myId) partnerIds.add(m.sender_id);
+        }
 
-        const convList = [
-          {
-            id: 1,
-            donor_id: donorUser.id,
-            receiver_id: recvUser.id,
-            partner: {
-              id: partnerUser.id,
-              name: partnerUser.name,
-              organization: partnerUser.organization,
-              role: partnerUser.role,
-              verified: true,
-              address: partnerUser.address,
-              business_type: isCurrentDonor ? 'Charity Shelter' : 'Bakery & Restaurant'
-            },
-            donation: memoryStore.donations[0],
-            pickup: memoryStore.pickups[0],
-            last_message: lastMsg,
-            unread_count: 0,
-            updated_at: lastMsg.created_at || new Date().toISOString()
+        const convList = [];
+        let index = 1;
+        for (const pId of partnerIds) {
+          const partnerUser = memoryStore.users.find(u => u.id === pId);
+          if (partnerUser) {
+            const partnerMsgs = memoryStore.messages.filter(
+              m => (m.sender_id === myId && m.receiver_id === pId) || (m.sender_id === pId && m.receiver_id === myId)
+            );
+            const lastMsg = partnerMsgs[partnerMsgs.length - 1];
+            convList.push({
+              id: index++,
+              partner_id: partnerUser.id,
+              donor_id: partnerUser.role === 'donor' ? partnerUser.id : myId,
+              receiver_id: partnerUser.role === 'receiver' ? partnerUser.id : myId,
+              partner: {
+                id: partnerUser.id,
+                name: partnerUser.name,
+                organization: partnerUser.organization || partnerUser.name,
+                role: partnerUser.role,
+                verified: true,
+                address: partnerUser.address || '',
+                business_type: partnerUser.organization || ''
+              },
+              last_message: lastMsg || null,
+              unread_count: 0,
+              updated_at: (lastMsg && lastMsg.created_at) || new Date().toISOString()
+            });
           }
-        ];
+        }
 
         return jsonResponse({ success: true, data: convList, conversations: convList });
       }
@@ -1355,7 +1365,15 @@ export default {
       if (path.startsWith('/api/chat/conversations/') && path.endsWith('/messages')) {
         const parts = path.split('/');
         const convId = parseInt(parts[parts.length - 2]);
-        const msgs = memoryStore.messages.filter(m => !convId || String(m.conversation_id) === String(convId) || convId === 1);
+        const partnerId = parseInt(url.searchParams.get('partnerId') || url.searchParams.get('partner_id'));
+        const myId = currentUser ? currentUser.id : null;
+
+        let msgs = memoryStore.messages;
+        if (myId && partnerId) {
+          msgs = msgs.filter(m => (m.sender_id === myId && m.receiver_id === partnerId) || (m.sender_id === partnerId && m.receiver_id === myId));
+        } else if (myId) {
+          msgs = msgs.filter(m => m.sender_id === myId || m.receiver_id === myId);
+        }
         return jsonResponse({ success: true, data: msgs, messages: msgs });
       }
 
@@ -1420,33 +1438,36 @@ export default {
       }
 
       if (path === '/api/chat/conversations/lookup' || path.includes('/chat/conversations/lookup')) {
-        const donorUser = memoryStore.users.find(u => u.role === 'donor') || memoryStore.users[1];
-        const recvUser = memoryStore.users.find(u => u.role === 'receiver') || memoryStore.users[2];
-        const lastMsg = memoryStore.messages[memoryStore.messages.length - 1] || {
-          message: 'Hello! The food packages are ready for pickup.',
-          created_at: new Date().toISOString()
-        };
-        const isCurrentDonor = currentUser ? currentUser.role === 'donor' : false;
-        const partnerUser = isCurrentDonor ? recvUser : donorUser;
+        const partnerId = parseInt(url.searchParams.get('partnerId') || url.searchParams.get('partner_id') || url.searchParams.get('userId'));
+        const myId = currentUser ? currentUser.id : 2;
+        const partnerUser = memoryStore.users.find(u => u.id === partnerId);
+
+        if (!partnerUser) {
+          return jsonResponse({ success: true, data: { conversation: null }, conversation: null });
+        }
+
+        const partnerMsgs = memoryStore.messages.filter(
+          m => (m.sender_id === myId && m.receiver_id === partnerId) || (m.sender_id === partnerId && m.receiver_id === myId)
+        );
+        const lastMsg = partnerMsgs[partnerMsgs.length - 1] || null;
 
         const conv = {
-          id: 1,
-          donor_id: donorUser.id,
-          receiver_id: recvUser.id,
+          id: partnerUser.id,
+          partner_id: partnerUser.id,
+          donor_id: partnerUser.role === 'donor' ? partnerUser.id : myId,
+          receiver_id: partnerUser.role === 'receiver' ? partnerUser.id : myId,
           partner: {
             id: partnerUser.id,
             name: partnerUser.name,
-            organization: partnerUser.organization,
+            organization: partnerUser.organization || partnerUser.name,
             role: partnerUser.role,
             verified: true,
-            address: partnerUser.address,
-            business_type: isCurrentDonor ? 'Charity Shelter' : 'Bakery & Restaurant'
+            address: partnerUser.address || '',
+            business_type: partnerUser.organization || ''
           },
-          donation: memoryStore.donations[0],
-          pickup: memoryStore.pickups[0],
           last_message: lastMsg,
           unread_count: 0,
-          updated_at: new Date().toISOString()
+          updated_at: (lastMsg && lastMsg.created_at) || new Date().toISOString()
         };
         return jsonResponse({ success: true, data: { conversation: conv }, conversation: conv });
       }
