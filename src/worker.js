@@ -772,39 +772,140 @@ export default {
         }
         if (method === 'POST') {
           const body = await getBody();
+          const dId = parseInt(body.donation_id || 1);
+          const donation = memoryStore.donations.find(d => d.id === dId);
+          const reqQty = parseFloat(body.requested_quantity || body.quantity || 1);
+
+          if (donation) {
+            if (reqQty <= 0) {
+              return jsonResponse({ success: false, message: 'Requested quantity must be greater than zero' }, 400);
+            }
+            if (reqQty > donation.remaining_quantity) {
+              return jsonResponse({
+                success: false,
+                message: `Cannot request ${reqQty} items. Only ${donation.remaining_quantity} items remaining.`
+              }, 400);
+            }
+
+            donation.remaining_quantity = Math.max(0, donation.remaining_quantity - reqQty);
+            donation.allocated_quantity = (donation.allocated_quantity || 0) + reqQty;
+            donation.status = donation.remaining_quantity === 0 ? 'Claimed' : 'Partially Claimed';
+          }
+
           const pickupItem = {
             id: memoryStore.nextId.pickups++,
-            donation_id: body.donation_id || 1,
+            donation_id: dId,
+            donor_id: donation ? donation.donor_id : 2,
+            donor_name: donation ? donation.donor_name : 'City Bakery & Cafe',
             receiver_id: currentUser ? currentUser.id : 3,
-            receiver_name: currentUser ? currentUser.name : 'Hope Shelter NGO',
+            receiver_name: currentUser ? currentUser.name : 'Hope Charity Shelter',
+            receiver_org: (currentUser && currentUser.organization) || 'Hope Charity Foundation',
+            food_name: donation ? donation.food_name : 'Prepared Meals',
+            food_type: donation ? donation.food_type : 'Cooked Meal',
             status: 'Approved',
             request_message: body.request_message || 'Pickup requested',
-            requested_quantity: parseFloat(body.requested_quantity || 1),
-            allocated_quantity: parseFloat(body.requested_quantity || 1),
-            unit: 'servings',
-            pickup_address: '124 Anna Salai, Chennai',
+            requested_quantity: reqQty,
+            allocated_quantity: reqQty,
+            unit: (donation && donation.unit) || 'servings',
+            pickup_address: (donation && donation.pickup_address) || '124 Anna Salai, Chennai',
+            pickup_time: body.pickup_time || new Date(Date.now() + 3600 * 1000).toISOString(),
             qr_token: 'QR-' + Math.random().toString(36).substring(2, 10).toUpperCase(),
             requested_at: new Date().toISOString(),
-            approved_at: new Date().toISOString()
+            approved_at: new Date().toISOString(),
+            created_at: new Date().toISOString()
           };
           memoryStore.pickups.unshift(pickupItem);
+
+          // Notify Donor
+          memoryStore.notifications.unshift({
+            id: memoryStore.nextId.notifications++,
+            user_id: donation ? donation.donor_id : 2,
+            title: 'New Food Request',
+            message: `${pickupItem.receiver_name} requested ${reqQty} ${pickupItem.unit} of ${pickupItem.food_name}.`,
+            type: 'pickup',
+            is_read: false,
+            created_at: new Date().toISOString()
+          });
+
           return jsonResponse({ success: true, message: 'Pickup request created', data: pickupItem }, 201);
         }
       }
 
-      if (path.startsWith('/api/pickup-requests/')) {
+      if (path.startsWith('/api/pickup-requests/') || path.startsWith('/api/pickups/')) {
         const parts = path.split('/');
-        const pId = parseInt(parts[parts.length - 1]);
-        if (method === 'PUT') {
-          const body = await getBody();
-          const p = memoryStore.pickups.find(x => x.id === pId);
-          if (p) Object.assign(p, body);
-          return jsonResponse({ success: true, message: 'Pickup request updated', data: p });
-        }
-      }
+        const pId = parseInt(parts[parts.length - 1]) || parseInt(parts[parts.length - 2]);
+        const isCollect = path.endsWith('/confirm-receipt') || path.endsWith('/collect') || path.endsWith('/complete');
 
-      if (path.startsWith('/api/pickups/') && path.endsWith('/confirm-receipt')) {
-        return jsonResponse({ success: true, message: 'Pickup completed and verified successfully!' });
+        if (!isNaN(pId)) {
+          const p = memoryStore.pickups.find(x => x.id === pId);
+          const donation = p ? memoryStore.donations.find(d => d.id === p.donation_id) : null;
+
+          if (isCollect) {
+            if (p) p.status = 'Completed';
+            if (donation && donation.remaining_quantity === 0) donation.status = 'Completed';
+
+            // Notify Donor
+            if (p) {
+              memoryStore.notifications.unshift({
+                id: memoryStore.nextId.notifications++,
+                user_id: p.donor_id || 2,
+                title: 'Food Collected Successfully',
+                message: `${p.receiver_name} collected ${p.requested_quantity} ${p.unit} of ${p.food_name}.`,
+                type: 'completed',
+                is_read: false,
+                created_at: new Date().toISOString()
+              });
+            }
+
+            return jsonResponse({ success: true, message: 'Food collection confirmed and verified!', data: p });
+          }
+
+          if (method === 'PUT' || method === 'POST') {
+            const body = await getBody();
+            const action = (body.action || body.status || '').toLowerCase();
+
+            if (p) {
+              if (action.includes('accept') || action.includes('approve')) {
+                p.status = 'Approved';
+                p.approved_at = new Date().toISOString();
+
+                // Notify Receiver
+                memoryStore.notifications.unshift({
+                  id: memoryStore.nextId.notifications++,
+                  user_id: p.receiver_id || 3,
+                  title: 'Food Request Approved',
+                  message: `Your request for ${p.requested_quantity} ${p.unit} of ${p.food_name} was approved!`,
+                  type: 'pickup_approved',
+                  is_read: false,
+                  created_at: new Date().toISOString()
+                });
+              } else if (action.includes('reject') || action.includes('decline')) {
+                p.status = 'Rejected';
+                // Return quantity back to donation
+                if (donation) {
+                  donation.remaining_quantity += p.requested_quantity;
+                  donation.allocated_quantity = Math.max(0, (donation.allocated_quantity || 0) - p.requested_quantity);
+                  donation.status = donation.remaining_quantity > 0 ? 'Available' : 'Claimed';
+                }
+
+                // Notify Receiver
+                memoryStore.notifications.unshift({
+                  id: memoryStore.nextId.notifications++,
+                  user_id: p.receiver_id || 3,
+                  title: 'Food Request Declined',
+                  message: `Your request for ${p.food_name} could not be fulfilled.`,
+                  type: 'pickup_rejected',
+                  is_read: false,
+                  created_at: new Date().toISOString()
+                });
+              } else {
+                Object.assign(p, body);
+              }
+            }
+
+            return jsonResponse({ success: true, message: 'Pickup request updated', data: p });
+          }
+        }
       }
 
       // --- 6. NEEDS ENDPOINTS ---
@@ -958,9 +1059,14 @@ export default {
         }
         if (method === 'POST') {
           const body = await getBody();
+          const msgText = (body.message || body.text || '').trim();
+          if (!msgText) {
+            return jsonResponse({ success: false, message: 'Message cannot be empty' }, 400);
+          }
+
           const senderId = currentUser ? currentUser.id : (body.sender_id || 2);
           const senderUser = memoryStore.users.find(u => u.id === senderId);
-          const receiverId = body.receiver_id || (senderId === 2 ? 3 : 2);
+          const receiverId = body.receiver_id || body.recipient_id || (senderId === 2 ? 3 : 2);
           const receiverUser = memoryStore.users.find(u => u.id === receiverId);
 
           const newMsg = {
@@ -972,7 +1078,7 @@ export default {
             receiver_id: receiverId,
             receiver_name: receiverUser ? receiverUser.name : 'Partner',
             receiver_role: receiverUser ? receiverUser.role : 'receiver',
-            message: body.message || body.text || '',
+            message: msgText,
             created_at: new Date().toISOString()
           };
 
@@ -985,6 +1091,17 @@ export default {
             payload: newMsg,
             target_id: receiverId,
             timestamp: Date.now()
+          });
+
+          // Create notification for receiver
+          memoryStore.notifications.unshift({
+            id: memoryStore.nextId.notifications++,
+            user_id: receiverId,
+            title: 'New Message',
+            message: `${newMsg.sender_name}: ${msgText.slice(0, 60)}${msgText.length > 60 ? '...' : ''}`,
+            type: 'message',
+            is_read: false,
+            created_at: new Date().toISOString()
           });
 
           return jsonResponse({ success: true, message: 'Message sent successfully', data: newMsg });
@@ -1090,14 +1207,24 @@ export default {
       // --- 10. NOTIFICATIONS ENDPOINTS ---
 
       if (path === '/api/notifications' || path === '/api/notifications/unread-count') {
+        const uId = currentUser ? currentUser.id : (url.searchParams.get('user_id') || null);
+        const userNotifs = uId
+          ? memoryStore.notifications.filter(n => !n.user_id || String(n.user_id) === String(uId) || n.user_id === 'all')
+          : memoryStore.notifications;
+
         if (path.endsWith('/unread-count')) {
-          return jsonResponse({ success: true, data: { count: memoryStore.notifications.filter(n => !n.is_read).length } });
+          return jsonResponse({ success: true, data: { count: userNotifs.filter(n => !n.is_read).length } });
         }
-        return jsonResponse({ success: true, data: memoryStore.notifications, count: memoryStore.notifications.length });
+        return jsonResponse({ success: true, data: userNotifs, count: userNotifs.length });
       }
 
       if (path === '/api/notifications/read-all') {
-        memoryStore.notifications.forEach(n => { n.is_read = true; });
+        const uId = currentUser ? currentUser.id : (url.searchParams.get('user_id') || null);
+        memoryStore.notifications.forEach(n => {
+          if (!uId || !n.user_id || String(n.user_id) === String(uId) || n.user_id === 'all') {
+            n.is_read = true;
+          }
+        });
         return jsonResponse({ success: true, message: 'All notifications marked as read' });
       }
 
