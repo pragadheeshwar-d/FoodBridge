@@ -1,8 +1,6 @@
 name = "foodbridge"
 compatibility_date = "2024-09-23"
 
-# Cloudflare Static Assets for Vite SPA
 [assets]
 directory = "./dist"
-binding = "ASSETS"
 not_found_handling = "single-page-application"
