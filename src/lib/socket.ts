@@ -71,7 +71,7 @@ class EdgeSocket {
     }
 
     // Forward signaling events to Cloudflare Worker Edge
-    const targetUrl = `${BASE_URL}/call/signal`
+    const targetUrl = BASE_URL ? `${BASE_URL}/api/call/signal` : '/api/call/signal'
     fetch(targetUrl, {
       method: 'POST',
       headers: {
@@ -129,7 +129,8 @@ class EdgeSocket {
 
       try {
         const token = localStorage.getItem('token') || this.auth.token || ''
-        const url = `${BASE_URL}/call/signal?user_id=${this.currentUserId}&since=${this.lastProcessedEventId}`
+        const baseSignal = BASE_URL ? `${BASE_URL}/api/call/signal` : '/api/call/signal'
+        const url = `${baseSignal}?user_id=${this.currentUserId}&since=${this.lastProcessedEventId}`
         const res = await fetch(url, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         })

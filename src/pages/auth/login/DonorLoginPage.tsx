@@ -56,8 +56,8 @@ export function DonorLoginPage() {
       const code = error?.response?.data?.code
       const msg = error?.response?.data?.message || error?.message || 'Login failed.'
       if (error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error')) {
-        setErrorMessage('Cannot reach backend server. If Render was idle, please wait a moment for it to wake up.')
-        toast('Network Error: Server waking up.', 'error')
+        setErrorMessage('Cannot reach server. Please check your internet connection and try again.')
+        toast('Network Error: Unable to reach server.', 'error')
       } else if (code === 'EMAIL_NOT_VERIFIED' || code === 'EMAIL_UNVERIFIED') {
         setErrorMessage('Your email address is not verified yet. Please check your inbox.')
         toast('Please verify your email first.', 'warning')

@@ -60,8 +60,8 @@ export function AdminLoginPage() {
       navigate(destination, { replace: true })
     } catch (error: any) {
       if (error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error')) {
-        setErrorMessage('Cannot reach backend server. Please verify your Render service is awake or check connection.')
-        toast('Network Error: Unable to reach backend.', 'error')
+        setErrorMessage('Cannot reach server. Please check your internet connection and try again.')
+        toast('Network Error: Unable to reach server.', 'error')
       } else if (error?.response?.status === 401) {
         setErrorMessage('Invalid admin email or password. Use: admin@foodbridge.org / Admin@123')
         toast('Invalid credentials.', 'error')
