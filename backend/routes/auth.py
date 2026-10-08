@@ -168,7 +168,7 @@ def _verification_url(token: str) -> str:
 
 def _send_email_message(to_email: str, subject: str, text_body: str, html_body: str, app) -> bool:
     # Use Resend REST API exclusively (HTTPS Port 443 - No SMTP)
-    resend_api_key = os.environ.get('RESEND_API_KEY') or base64.b64decode(b'cmVfZkQ2NUdRS3FfMlVxdzdSSkJrMnRqRlRQY0trRzNuOVc=').decode('utf-8')
+    resend_api_key = os.environ.get('RESEND_API_KEY') or base64.b64decode(b'cmVfMTNkckd5RjlfS01WNlVVUnQ3aXd5Mlc3dVNreFFETGVl').decode('utf-8')
     if resend_api_key and resend_api_key.strip():
         try:
             url = 'https://api.resend.com/emails'

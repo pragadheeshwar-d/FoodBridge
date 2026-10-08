@@ -5,7 +5,7 @@
 
 // JWT Secret Key (Can be overridden via Cloudflare Worker environment variables)
 const JWT_SECRET = 'foodbridge-edge-jwt-production-key-2026';
-const FALLBACK_RESEND_KEY = atob('cmVfZkQ2NUdRS3FfMlVxdzdSSkJrMnRqRlRQY0trRzNuOVc=');
+const FALLBACK_RESEND_KEY = atob('cmVfMTNkckd5RjlfS01WNlVVUnQ3aXd5Mlc3dVNreFFETGVl');
 
 // --- Web Crypto Password Hashing & JWT Helpers ---
 
