@@ -400,6 +400,21 @@ function corsOptionsResponse(request) {
   });
 }
 
+function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2 || isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) {
+    return 2.5;
+  }
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return parseFloat((R * c).toFixed(1));
+}
+
 // --- Main Cloudflare Worker Handler ---
 
 export default {
@@ -730,29 +745,45 @@ export default {
           list = list.filter(d => String(d.donor_id) === String(donorIdParam));
         }
 
-        const enrichedList = list.map((d, index) => ({
-          ...d,
-          road_distance_km: 2.5 + (index * 1.8),
-          estimated_travel_minutes: 8 + (index * 4),
-        }));
+        const userLat = parseFloat(url.searchParams.get('lat') || url.searchParams.get('latitude')) || 13.0827;
+        const userLng = parseFloat(url.searchParams.get('lng') || url.searchParams.get('longitude')) || 80.2707;
+
+        const enrichedList = list.map(d => {
+          const dist = calculateDistanceKm(userLat, userLng, Number(d.latitude), Number(d.longitude));
+          const travelMins = Math.max(2, Math.round(dist * 3.5));
+          return {
+            ...d,
+            road_distance_km: dist,
+            distance_km: dist,
+            estimated_travel_minutes: travelMins,
+          };
+        });
         return jsonResponse({ success: true, data: enrichedList, donations: enrichedList });
       }
 
       // GET /api/donations/route
       if (path === '/api/donations/route') {
+        const fromLat = parseFloat(url.searchParams.get('from_lat') || url.searchParams.get('start_lat')) || 13.0827;
+        const fromLng = parseFloat(url.searchParams.get('from_lng') || url.searchParams.get('start_lng')) || 80.2707;
+        const toLat = parseFloat(url.searchParams.get('to_lat') || url.searchParams.get('end_lat')) || 13.0604;
+        const toLng = parseFloat(url.searchParams.get('to_lng') || url.searchParams.get('end_lng')) || 80.2496;
+
+        const dist = calculateDistanceKm(fromLat, fromLng, toLat, toLng);
+        const travelMins = Math.max(3, Math.round(dist * 3.5));
+
         return jsonResponse({
           success: true,
           data: {
-            distance_km: 3.2,
-            distance_m: 3200,
-            travel_minutes: 11,
+            distance_km: dist,
+            distance_m: Math.round(dist * 1000),
+            travel_minutes: travelMins,
             geometry: {
               type: 'LineString',
               coordinates: [
-                [80.2707, 13.0827],
-                [80.2650, 13.0780],
-                [80.2500, 13.0650],
-                [80.2496, 13.0604]
+                [fromLng, fromLat],
+                [fromLng + (toLng - fromLng) * 0.33, fromLat + (toLat - fromLat) * 0.33],
+                [fromLng + (toLng - fromLng) * 0.66, fromLat + (toLat - fromLat) * 0.66],
+                [toLng, toLat]
               ]
             }
           }
@@ -761,9 +792,31 @@ export default {
 
       // POST /api/donations/geocode
       if (path === '/api/donations/geocode') {
+        const body = await getBody();
+        const addressQuery = body.address || body.pickup_address || body.query || url.searchParams.get('q') || '';
+        let lat = 13.0827;
+        let lng = 80.2707;
+        let formatted = addressQuery || 'Chennai, Tamil Nadu, India';
+
+        if (addressQuery) {
+          try {
+            const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addressQuery)}&limit=1`, {
+              headers: { 'User-Agent': 'FoodBridge-Edge/1.0' }
+            });
+            if (geoRes.ok) {
+              const geoData = await geoRes.json();
+              if (Array.isArray(geoData) && geoData.length > 0) {
+                lat = parseFloat(geoData[0].lat);
+                lng = parseFloat(geoData[0].lon);
+                formatted = geoData[0].display_name;
+              }
+            }
+          } catch {}
+        }
+
         return jsonResponse({
           success: true,
-          data: { latitude: 13.0827, longitude: 80.2707, formatted_address: 'Chennai, Tamil Nadu, India' }
+          data: { latitude: lat, longitude: lng, formatted_address: formatted }
         });
       }
 
@@ -791,11 +844,35 @@ export default {
           longitude: parseFloat(body.longitude) || 80.2707,
           expiry_time: body.expiry_time || new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
           status: 'Available',
-          freshness_score: Math.floor(Math.random() * 15) + 85,
+          freshness_score: Math.floor(Math.random() * 10) + 90,
           risk_level: 'Low',
           created_at: new Date().toISOString()
         };
         memoryStore.donations.unshift(donationItem);
+
+        // Realtime signals broadcast
+        memoryStore.signals.push({
+          id: memoryStore.nextId.signals++,
+          event: 'new_donation',
+          payload: donationItem,
+          target_id: null,
+          timestamp: Date.now()
+        });
+        memoryStore.signals.push({
+          id: memoryStore.nextId.signals++,
+          event: 'donation_created',
+          payload: donationItem,
+          target_id: null,
+          timestamp: Date.now()
+        });
+        memoryStore.signals.push({
+          id: memoryStore.nextId.signals++,
+          event: 'dashboard_updated',
+          payload: {},
+          target_id: null,
+          timestamp: Date.now()
+        });
+
         return jsonResponse({ success: true, message: 'Donation posted successfully', data: donationItem }, 201);
       }
 
@@ -884,6 +961,22 @@ export default {
             created_at: new Date().toISOString()
           });
 
+          // Real-time signal broadcast
+          memoryStore.signals.push({
+            id: memoryStore.nextId.signals++,
+            event: 'pickup_requested',
+            payload: pickupItem,
+            target_id: donation ? donation.donor_id : null,
+            timestamp: Date.now()
+          });
+          memoryStore.signals.push({
+            id: memoryStore.nextId.signals++,
+            event: 'dashboard_updated',
+            payload: {},
+            target_id: null,
+            timestamp: Date.now()
+          });
+
           return jsonResponse({ success: true, message: 'Pickup request created', data: pickupItem }, 201);
         }
       }
@@ -912,6 +1005,29 @@ export default {
                 is_read: false,
                 created_at: new Date().toISOString()
               });
+
+              // Realtime signal broadcast
+              memoryStore.signals.push({
+                id: memoryStore.nextId.signals++,
+                event: 'food_received',
+                payload: { pickup: p, donation },
+                target_id: p.donor_id,
+                timestamp: Date.now()
+              });
+              memoryStore.signals.push({
+                id: memoryStore.nextId.signals++,
+                event: 'pickup_completed',
+                payload: p,
+                target_id: null,
+                timestamp: Date.now()
+              });
+              memoryStore.signals.push({
+                id: memoryStore.nextId.signals++,
+                event: 'dashboard_updated',
+                payload: {},
+                target_id: null,
+                timestamp: Date.now()
+              });
             }
 
             return jsonResponse({ success: true, message: 'Food collection confirmed and verified!', data: p });
@@ -936,6 +1052,22 @@ export default {
                   is_read: false,
                   created_at: new Date().toISOString()
                 });
+
+                // Realtime signal broadcast
+                memoryStore.signals.push({
+                  id: memoryStore.nextId.signals++,
+                  event: 'pickup_approved',
+                  payload: p,
+                  target_id: p.receiver_id,
+                  timestamp: Date.now()
+                });
+                memoryStore.signals.push({
+                  id: memoryStore.nextId.signals++,
+                  event: 'dashboard_updated',
+                  payload: {},
+                  target_id: null,
+                  timestamp: Date.now()
+                });
               } else if (action.includes('reject') || action.includes('decline')) {
                 p.status = 'Rejected';
                 // Return quantity back to donation
@@ -954,6 +1086,22 @@ export default {
                   type: 'pickup_rejected',
                   is_read: false,
                   created_at: new Date().toISOString()
+                });
+
+                // Realtime signal broadcast
+                memoryStore.signals.push({
+                  id: memoryStore.nextId.signals++,
+                  event: 'pickup_rejected',
+                  payload: p,
+                  target_id: p.receiver_id,
+                  timestamp: Date.now()
+                });
+                memoryStore.signals.push({
+                  id: memoryStore.nextId.signals++,
+                  event: 'dashboard_updated',
+                  payload: {},
+                  target_id: null,
+                  timestamp: Date.now()
                 });
               } else {
                 Object.assign(p, body);
@@ -1146,23 +1294,94 @@ export default {
       // --- 7. DASHBOARD & STATS ENDPOINTS ---
 
       if (path === '/api/dashboard/donor' || path === '/api/dashboard/receiver' || path === '/api/dashboard/public' || path.startsWith('/api/dashboard')) {
-        const totalDonations = memoryStore.donations.length;
-        const totalPickups = memoryStore.pickups.length;
+        let totalMeals = 0;
+        for (const d of memoryStore.donations) {
+          totalMeals += Number(d.allocated_quantity || 0) + (d.status === 'Completed' ? Number(d.quantity_number || 0) : 0);
+        }
+        for (const p of memoryStore.pickups) {
+          if (p.status === 'Completed' || p.status === 'Approved') {
+            totalMeals += Number(p.requested_quantity || p.allocated_quantity || 0);
+          }
+        }
+        if (totalMeals === 0) {
+          totalMeals = memoryStore.donations.reduce((acc, cur) => acc + Number(cur.quantity_number || 0), 0);
+        }
+
+        const donorUsers = memoryStore.users.filter(u => u.role === 'donor');
+        const receiverUsers = memoryStore.users.filter(u => u.role === 'receiver');
+        const availableDonations = memoryStore.donations.filter(d => d.status === 'Available' || d.status === 'Partially Claimed');
+        const activePickups = memoryStore.pickups.filter(p => p.status === 'Pending' || p.status === 'Approved');
+        const completedPickups = memoryStore.pickups.filter(p => p.status === 'Completed');
+        const rejectedPickups = memoryStore.pickups.filter(p => p.status === 'Rejected');
+
+        const co2Saved = parseFloat((totalMeals * 0.42).toFixed(1));
+        const foodWasteKg = parseFloat((totalMeals * 0.35).toFixed(1));
+
+        // Real acceptance rate calculation
+        const totalDecisions = completedPickups.length + activePickups.length + rejectedPickups.length;
+        const acceptanceRate = totalDecisions > 0 ? Math.round(((completedPickups.length + activePickups.length) / totalDecisions) * 100) : 100;
+
+        // Dynamic live recent activities
+        const recentActivities = [];
+        for (const p of memoryStore.pickups.slice(0, 4)) {
+          recentActivities.push({
+            id: `act-p-${p.id}`,
+            title: p.status === 'Completed' ? 'Food Collected' : (p.status === 'Approved' ? 'Pickup Approved' : 'Pickup Requested'),
+            description: `${p.receiver_name} • ${p.food_name} (${p.requested_quantity} ${p.unit})`,
+            time: p.created_at || new Date().toISOString()
+          });
+        }
+        for (const d of memoryStore.donations.slice(0, 4)) {
+          recentActivities.push({
+            id: `act-d-${d.id}`,
+            title: 'Food Donation Listed',
+            description: `${d.donor_name} listed ${d.food_name} (${d.quantity})`,
+            time: d.created_at || new Date().toISOString()
+          });
+        }
+        for (const n of memoryStore.needs.slice(0, 4)) {
+          recentActivities.push({
+            id: `act-n-${n.id}`,
+            title: 'Food Need Posted',
+            description: `${n.receiver_organization || n.receiver_name} • ${n.food_name} (${n.required_quantity})`,
+            time: n.created_at || new Date().toISOString()
+          });
+        }
+        recentActivities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+        const dashboardData = {
+          total_donations: memoryStore.donations.length,
+          available_donations: availableDonations.length,
+          active_donations: availableDonations.length,
+          active_requests: activePickups.length,
+          active_pickups: activePickups.length,
+          todays_pickups: activePickups.length + completedPickups.length,
+          total_pickups: memoryStore.pickups.length,
+          meals_saved: totalMeals,
+          meals_received: totalMeals,
+          meals_received_month: totalMeals,
+          daily_people_fed: Math.max(totalMeals, 25),
+          food_waste_prevented: foodWasteKg,
+          co2_reduced_kg: co2Saved,
+          carbon_reduced: co2Saved,
+          impact_score: Math.min(100, Math.max(50, totalMeals * 2 + 70)),
+          acceptance_rate: acceptanceRate,
+          active_donors: Math.max(1, donorUsers.length),
+          active_receivers: Math.max(1, receiverUsers.length),
+          restaurants_connected: Math.max(1, donorUsers.length),
+          ngos_connected: Math.max(1, receiverUsers.length),
+          cities_covered: 2,
+          successful_deliveries: completedPickups.length,
+          todays_donations: memoryStore.donations.length,
+          active_users: memoryStore.users.length,
+          recent_activities: recentActivities.slice(0, 6)
+        };
+
         return jsonResponse({
           success: true,
-          data: {
-            total_donations: totalDonations,
-            meals_saved: totalDonations * 45 + 120,
-            active_pickups: totalPickups,
-            co2_reduced_kg: totalDonations * 18.5,
-            impact_score: 98,
-            active_donors: 14,
-            active_receivers: 28,
-            recent_activities: [
-              { title: 'Fresh Food Shared', description: 'Fresh Bread & Healthy Pastries listed', time: '5m ago' },
-              { title: 'Pickup Coordinated', description: 'Hope Shelter NGO scheduled pickup', time: '15m ago' }
-            ]
-          }
+          data: dashboardData,
+          stats: dashboardData,
+          overview: dashboardData
         });
       }
 
@@ -1170,19 +1389,55 @@ export default {
 
       if (path === '/api/services/geocode') {
         const q = url.searchParams.get('q') || '';
-        return jsonResponse({
-          success: true,
-          data: [
-            { display_name: q || 'Anna Nagar, Chennai, Tamil Nadu, India', lat: 13.0850, lon: 80.2100 },
-            { display_name: 'T. Nagar, Chennai, Tamil Nadu, India', lat: 13.0418, lon: 80.2341 }
-          ]
-        });
+        let results = [];
+        if (q) {
+          try {
+            const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`, {
+              headers: { 'User-Agent': 'FoodBridge-Edge/1.0' }
+            });
+            if (geoRes.ok) {
+              const geoData = await geoRes.json();
+              if (Array.isArray(geoData) && geoData.length > 0) {
+                results = geoData.map(g => ({
+                  display_name: g.display_name,
+                  lat: parseFloat(g.lat),
+                  lon: parseFloat(g.lon),
+                  latitude: parseFloat(g.lat),
+                  longitude: parseFloat(g.lon)
+                }));
+              }
+            }
+          } catch {}
+        }
+        if (results.length === 0) {
+          results = [
+            { display_name: q || 'Anna Nagar, Chennai, Tamil Nadu, India', lat: 13.0850, lon: 80.2100, latitude: 13.0850, longitude: 80.2100 },
+            { display_name: 'T. Nagar, Chennai, Tamil Nadu, India', lat: 13.0418, lon: 80.2341, latitude: 13.0418, longitude: 80.2341 }
+          ];
+        }
+        return jsonResponse({ success: true, data: results });
       }
 
       if (path === '/api/services/reverse-geocode') {
+        const lat = url.searchParams.get('lat');
+        const lon = url.searchParams.get('lon');
+        let displayName = 'Chennai, Tamil Nadu, India';
+        if (lat && lon) {
+          try {
+            const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`, {
+              headers: { 'User-Agent': 'FoodBridge-Edge/1.0' }
+            });
+            if (geoRes.ok) {
+              const geoData = await geoRes.json();
+              if (geoData && geoData.display_name) {
+                displayName = geoData.display_name;
+              }
+            }
+          } catch {}
+        }
         return jsonResponse({
           success: true,
-          data: { display_name: 'Anna Salai, Chennai, Tamil Nadu, India' }
+          data: { display_name: displayName }
         });
       }
 
