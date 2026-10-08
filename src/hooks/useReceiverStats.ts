@@ -3,6 +3,8 @@ import api, { BASE_URL } from '../lib/api'
 import { formatBackendTime, parseBackendDate } from '../lib/date'
 import { useAuth } from '../context/AuthContext'
 import { useRealtimeSync } from './useRealtimeSync'
+import { donationService } from '../services/donationService'
+import { pickupRequestService } from '../services/pickupRequestService'
 
 export interface ReceiverStats {
   availableDonations: number
@@ -92,7 +94,7 @@ export function useReceiverStats() {
 
     try {
       const res = await api.get('/dashboard/receiver')
-      const s = res.data.stats || {}
+      const s = res.data.stats || res.data || {}
       setStats({
         availableDonations: s.available_donations ?? 0,
         activeRequests: s.active_requests ?? 0,
@@ -117,6 +119,7 @@ export function useReceiverStats() {
 
   useRealtimeSync([
     'new_donation',
+    'donation_created',
     'pickup_requested',
     'pickup_approved',
     'pickup_rejected',
@@ -141,8 +144,8 @@ export function useReceiverRequests() {
     }
 
     try {
-      const res = await api.get('/pickup-requests')
-      const items: PickupRequest[] = (res.data.pickup_requests ?? []).map((pr: any) => {
+      const rawList = await pickupRequestService.getPickupRequests()
+      const items: PickupRequest[] = rawList.map((pr: any) => {
         const donation = pr.donation || {}
         const rawDonorId = pr.donor_id ?? donation.donor_id ?? pr.donation?.donor_id
         return {
@@ -153,7 +156,7 @@ export function useReceiverRequests() {
           donorName: pr.donor_name || pr.donor_organization || donation.donor_name || 'Unknown Donor',
           foodType: pr.food_type || donation.food_name || 'Food',
           quantity: pr.quantity || donation.quantity || 0,
-          unit: donation.unit || 'meals',
+          unit: donation.unit || pr.unit || 'meals',
           pickupTime: formatBackendTime(pr.pickup_time || donation.pickup_time),
           status: pr.status || 'Pending',
           createdAt: parseBackendDate(pr.requested_at) || new Date(),
@@ -198,9 +201,9 @@ export function useAvailableDonations() {
 
   const fetchDonations = useCallback(async () => {
     try {
-      const res = await api.get('/donations/available')
+      const rawList = await donationService.getAvailableDonations()
       const now = Date.now()
-      const items: AvailableDonation[] = (res.data.donations ?? []).map((d: any) => {
+      const items: AvailableDonation[] = rawList.map((d: any) => {
         const expiry = parseBackendDate(d.expiry_time)
         const timeLeftMs = expiry ? expiry.getTime() - now : 0
         const timeLeftMins = Math.max(0, Math.round(timeLeftMs / 60000))
@@ -224,7 +227,7 @@ export function useAvailableDonations() {
           expiryTime: expiry
             ? expiry.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
             : '—',
-          donorId: String(d.donor_id),
+          donorId: d.donor_id != null ? String(d.donor_id) : undefined,
           donorName: d.donor_name,
           donorOrganization: d.donor_organization,
           pickupAddress: d.pickup_address,
@@ -247,6 +250,7 @@ export function useAvailableDonations() {
 
   useRealtimeSync([
     'new_donation',
+    'donation_created',
     'pickup_requested',
     'pickup_approved',
     'pickup_rejected',

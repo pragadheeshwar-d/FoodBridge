@@ -65,6 +65,9 @@ export function useDonationStats() {
   return { stats, loading, refetch: fetchStats }
 }
 
+import { donationService } from '../services/donationService'
+import { pickupRequestService } from '../services/pickupRequestService'
+
 export function useDonorDonations() {
   const { user } = useAuth()
   const [donations, setDonations] = useState<any[]>([])
@@ -77,9 +80,9 @@ export function useDonorDonations() {
     }
 
     try {
-      const res = await api.get('/donations', { params: { donor_id: user.id } })
+      const rawList = await donationService.getDonations({ donor_id: user.id })
       const parseUtc = (d: string | null) => d ? new Date(d.endsWith('Z') ? d : `${d}Z`) : null;
-      const items = (res.data.donations ?? []).map((d: any) => ({
+      const items = rawList.map((d: any) => ({
         ...d,
         id: String(d.id),
         createdAt: d.created_at ? parseUtc(d.created_at) : new Date(),
@@ -111,6 +114,7 @@ export function useDonorDonations() {
 
   useRealtimeSync([
     'new_donation',
+    'donation_created',
     'pickup_requested',
     'pickup_approved',
     'pickup_rejected',
@@ -134,9 +138,9 @@ export function useDonorPickups() {
     }
 
     try {
-      const res = await api.get('/pickup-requests')
+      const rawList = await pickupRequestService.getPickupRequests()
       const parseUtc = (d: string | null) => d ? new Date(d.endsWith('Z') ? d : `${d}Z`) : null;
-      const items = (res.data.pickup_requests ?? []).map((pr: any) => ({
+      const items = rawList.map((pr: any) => ({
         id: String(pr.id),
         donationId: String(pr.donation_id),
         receiverId: pr.receiver_id != null ? Number(pr.receiver_id) : (pr.receiverId != null ? Number(pr.receiverId) : undefined),
