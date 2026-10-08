@@ -1022,14 +1022,22 @@ export default {
           const evt = body.event;
           const p = body.payload || {};
           const senderId = body.sender_id || (currentUser ? currentUser.id : null);
-          const targetId = p.receiver_id || p.partner_id || (senderId == 2 ? 3 : 2);
+          
+          let targetId = p.target_id || p.recipient_id || p.partner_id;
+          if (!targetId) {
+            if (evt && (evt.includes('accept') || evt.includes('answer') || evt.includes('reject'))) {
+              targetId = p.caller_id || (senderId == 3 ? 2 : 3);
+            } else {
+              targetId = p.receiver_id || (senderId == 2 ? 3 : 2);
+            }
+          }
 
           const signalItem = {
             id: memoryStore.nextId.signals++,
             event: evt,
             payload: {
               ...p,
-              caller_id: senderId,
+              caller_id: p.caller_id || senderId,
               caller_name: currentUser ? currentUser.name : (senderId == 2 ? 'City Bakery & Cafe' : 'Hope Charity Shelter'),
               caller_role: currentUser ? currentUser.role : (senderId == 2 ? 'donor' : 'receiver'),
               caller_avatar: null
