@@ -307,28 +307,42 @@ class MemoryStore {
 
 const memoryStore = new MemoryStore();
 
-// --- Response Helpers ---
+// --- Secure CORS & Response Helpers ---
 
-function jsonResponse(data, status = 200) {
+const ALLOWED_ORIGINS = [
+  'https://foodbridge.praga.workers.dev',
+  'http://localhost:5173',
+  'http://localhost:3000',
+];
+
+function getCorsHeaders(request) {
+  const origin = request ? (request.headers.get('Origin') || '') : '';
+  const isAllowed = ALLOWED_ORIGINS.includes(origin);
+  const allowOrigin = isAllowed ? origin : 'https://foodbridge.praga.workers.dev';
+
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin',
+  };
+}
+
+function jsonResponse(data, status = 200, request = null) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+      ...getCorsHeaders(request),
     },
   });
 }
 
-function corsOptionsResponse() {
+function corsOptionsResponse(request) {
   return new Response(null, {
     status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-    },
+    headers: getCorsHeaders(request),
   });
 }
 
@@ -338,18 +352,22 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // Handle CORS preflight
+    // 1. Handle CORS preflight before ANY route logic or auth
     if (request.method === 'OPTIONS') {
-      return corsOptionsResponse();
+      return corsOptionsResponse(request);
     }
 
-    // Only process /api routes through the API router
+    // 2. Only process /api routes through the API router with global error boundary
     if (url.pathname.startsWith('/api')) {
-      await memoryStore.init();
+      try {
+        await memoryStore.init();
 
-      // Normalize path (removes trailing slash and extra spaces)
-      const path = url.pathname.replace(/\/+$/, '') || '/api';
-      const method = request.method.toUpperCase();
+        // Bind request-aware JSON response helper
+        const sendJson = (data, status = 200) => jsonResponse(data, status, request);
+
+        // Normalize path (removes trailing slash and extra spaces)
+        const path = url.pathname.replace(/\/+$/, '') || '/api';
+        const method = request.method.toUpperCase();
 
       // --- 1. HEALTH CHECK ---
       if (path === '/api/health') {
@@ -1134,8 +1152,19 @@ export default {
       }
 
       // Fallback for any unknown /api route
-      return jsonResponse({ success: false, message: 'API route not found' }, 404);
+      return jsonResponse({ success: false, message: 'API route not found' }, 404, request);
+    } catch (err) {
+      console.error('[API Error]', err);
+      return jsonResponse(
+        {
+          success: false,
+          message: 'Internal server error',
+        },
+        500,
+        request
+      );
     }
+  }
 
     // Default: Serve frontend React / Vite static assets with SPA routing
     const assetRes = await env.ASSETS.fetch(request);
