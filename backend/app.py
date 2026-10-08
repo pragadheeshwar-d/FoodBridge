@@ -425,6 +425,9 @@ def create_app(config_class=Config):
         'http://localhost:3000',
         re.compile(r'^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$'),
         re.compile(r'^https:\/\/.*\.vercel\.app$'),
+        re.compile(r'^https:\/\/.*\.workers\.dev$'),
+        re.compile(r'^https:\/\/.*\.pages\.dev$'),
+        re.compile(r'^https:\/\/.*\.trycloudflare\.com$'),
     ]
     frontend_url = os.environ.get('FRONTEND_URL')
     if frontend_url and frontend_url not in allowed_origins:
