@@ -977,6 +977,136 @@ export default {
         });
       }
 
+      // --- ADMIN DASHBOARD & USER MANAGEMENT ROUTES ---
+
+      // GET /api/admin/stats
+      if (url.pathname === '/api/admin/stats') {
+        let allUsers = [];
+        if (env.DB) {
+          const { results } = await env.DB.prepare("SELECT * FROM users").all();
+          allUsers = results || [];
+        } else {
+          allUsers = memoryStore.users;
+        }
+
+        const stats = {
+          totalUsers: allUsers.length,
+          pendingApprovals: allUsers.filter(u => u.status === 'pending' || u.status === 'Pending').length,
+          approvedUsers: allUsers.filter(u => u.status === 'approved' || u.status === 'Approved').length,
+          rejectedUsers: allUsers.filter(u => u.status === 'rejected' || u.status === 'Rejected').length,
+          emailVerifiedUsers: allUsers.filter(u => u.verified === 1 || u.verified === true).length,
+        };
+
+        return jsonResponse({ success: true, data: stats });
+      }
+
+      // GET /api/admin/users
+      if (url.pathname === '/api/admin/users') {
+        let allUsers = [];
+        if (env.DB) {
+          const { results } = await env.DB.prepare("SELECT * FROM users ORDER BY id DESC").all();
+          allUsers = results || [];
+        } else {
+          allUsers = [...memoryStore.users].reverse();
+        }
+
+        const statusFilter = url.searchParams.get('status') || 'all';
+        const roleFilter = url.searchParams.get('role') || 'all';
+        const search = (url.searchParams.get('search') || '').toLowerCase().trim();
+
+        let filtered = allUsers.map(u => {
+          const { password: _, ...clean } = u;
+          return {
+            ...clean,
+            verified: Boolean(clean.verified),
+            status: clean.status || 'approved'
+          };
+        });
+
+        if (statusFilter !== 'all') {
+          filtered = filtered.filter(u => (u.status || '').toLowerCase() === statusFilter.toLowerCase());
+        }
+
+        if (roleFilter !== 'all') {
+          filtered = filtered.filter(u => (u.role || '').toLowerCase() === roleFilter.toLowerCase());
+        }
+
+        if (search) {
+          filtered = filtered.filter(u =>
+            (u.name && u.name.toLowerCase().includes(search)) ||
+            (u.email && u.email.toLowerCase().includes(search)) ||
+            (u.organization && u.organization.toLowerCase().includes(search)) ||
+            (u.phone && u.phone.toLowerCase().includes(search))
+          );
+        }
+
+        return jsonResponse({ success: true, data: { users: filtered }, users: filtered });
+      }
+
+      // POST /api/admin/users/:id/approve
+      if (url.pathname.startsWith('/api/admin/users/') && url.pathname.endsWith('/approve') && request.method === 'POST') {
+        const parts = url.pathname.split('/');
+        const uId = parseInt(parts[parts.length - 2]);
+
+        if (env.DB) {
+          await env.DB.prepare("UPDATE users SET status = 'approved', account_status = 'approved', approved_at = ? WHERE id = ?").bind(new Date().toISOString(), uId).run();
+        } else {
+          const u = memoryStore.users.find(x => x.id === uId);
+          if (u) {
+            u.status = 'approved';
+            u.account_status = 'approved';
+            u.approved_at = new Date().toISOString();
+            u.rejection_reason = null;
+          }
+        }
+
+        return jsonResponse({ success: true, message: 'User approved successfully' });
+      }
+
+      // POST /api/admin/users/:id/reject
+      if (url.pathname.startsWith('/api/admin/users/') && url.pathname.endsWith('/reject') && request.method === 'POST') {
+        const parts = url.pathname.split('/');
+        const uId = parseInt(parts[parts.length - 2]);
+        let reason = 'Registration details did not meet platform safety requirements';
+        try {
+          const body = await request.json();
+          if (body && body.reason) reason = body.reason;
+        } catch {}
+
+        if (env.DB) {
+          await env.DB.prepare("UPDATE users SET status = 'rejected', account_status = 'rejected', rejected_at = ?, rejection_reason = ? WHERE id = ?").bind(new Date().toISOString(), reason, uId).run();
+        } else {
+          const u = memoryStore.users.find(x => x.id === uId);
+          if (u) {
+            u.status = 'rejected';
+            u.account_status = 'rejected';
+            u.rejected_at = new Date().toISOString();
+            u.rejection_reason = reason;
+          }
+        }
+
+        return jsonResponse({ success: true, message: 'User rejected successfully' });
+      }
+
+      // GET & PUT /api/verification/admin/requests
+      if (url.pathname === '/api/verification/admin/requests') {
+        let allUsers = env.DB ? (await env.DB.prepare("SELECT * FROM users WHERE role != 'admin'").all()).results || [] : memoryStore.users.filter(u => u.role !== 'admin');
+        const list = allUsers.map(u => ({
+          id: u.id,
+          user_id: u.id,
+          user_name: u.name,
+          organization: u.organization,
+          role: u.role,
+          status: u.status || 'approved',
+          submitted_at: u.created_at || new Date().toISOString()
+        }));
+        return jsonResponse({ success: true, data: list });
+      }
+
+      if (url.pathname.startsWith('/api/verification/admin/requests/') && url.pathname.endsWith('/review') && request.method === 'PUT') {
+        return jsonResponse({ success: true, message: 'Verification request updated successfully' });
+      }
+
       // --- NOTIFICATIONS ROUTES ---
 
       if (url.pathname === '/api/notifications') {
