@@ -16,8 +16,20 @@ class EdgeSocket {
   private pollingTimer: any = null
   private currentUserId: string | null = null
   private lastProcessedEventId: number = 0
+  private channel: BroadcastChannel | null = null
 
   constructor() {
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        this.channel = new BroadcastChannel('foodbridge_edge_channel')
+        this.channel.onmessage = (evt) => {
+          const { event, payload } = evt.data || {}
+          if (event) {
+            this.triggerLocal(event, payload)
+          }
+        }
+      }
+    } catch {}
     this.startPolling()
   }
 
@@ -69,6 +81,13 @@ class EdgeSocket {
       }
       return this
     }
+
+    // Broadcast immediately across all open browser tabs
+    try {
+      if (this.channel) {
+        this.channel.postMessage({ event, payload })
+      }
+    } catch {}
 
     // Forward signaling events to Cloudflare Worker Edge
     const targetUrl = BASE_URL ? `${BASE_URL}/api/call/signal` : '/api/call/signal'
