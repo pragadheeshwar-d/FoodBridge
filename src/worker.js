@@ -1138,6 +1138,19 @@ export default {
     }
 
     // Default: Serve frontend React / Vite static assets with SPA routing
-    return env.ASSETS.fetch(request);
+    const assetRes = await env.ASSETS.fetch(request);
+    const contentType = assetRes.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      const headers = new Headers(assetRes.headers);
+      headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      headers.set('Pragma', 'no-cache');
+      headers.set('Expires', '0');
+      return new Response(assetRes.body, {
+        status: assetRes.status,
+        statusText: assetRes.statusText,
+        headers,
+      });
+    }
+    return assetRes;
   },
 };
