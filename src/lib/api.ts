@@ -47,10 +47,34 @@ api.interceptors.response.use(
       payload &&
       typeof payload === 'object' &&
       'success' in payload &&
-      (payload as { success?: boolean }).success !== false &&
-      'data' in payload
+      (payload as { success?: boolean }).success !== false
     ) {
-      res.data = (payload as { data: unknown }).data
+      const rawData = (payload as { data?: unknown }).data !== undefined ? (payload as { data?: unknown }).data : payload
+
+      if (Array.isArray(rawData)) {
+        const arr = rawData as any
+        arr.data = rawData
+        arr.donations = (payload as any).donations || rawData
+        arr.pickup_requests = (payload as any).pickup_requests || (payload as any).requests || rawData
+        arr.needs = (payload as any).needs || rawData
+        arr.users = (payload as any).users || rawData
+        arr.conversations = (payload as any).conversations || rawData
+        arr.messages = (payload as any).messages || rawData
+        arr.events = (payload as any).events || rawData
+        arr.notifications = (payload as any).notifications || rawData
+        res.data = arr
+      } else if (rawData && typeof rawData === 'object') {
+        const obj = { ...(payload as object), ...(rawData as object) } as any
+        obj.data = rawData
+        obj.stats = (rawData as any).stats || (payload as any).stats || ((rawData as any).total_donations !== undefined ? rawData : undefined) || (payload as any).overview || rawData
+        obj.donation = (rawData as any).donation || (payload as any).donation || rawData
+        obj.pickup_request = (rawData as any).pickup_request || (payload as any).pickup_request || rawData
+        obj.user = (rawData as any).user || (payload as any).user || ((rawData as any).email ? rawData : undefined)
+        obj.token = (rawData as any).token || (payload as any).token
+        res.data = obj
+      } else {
+        res.data = rawData
+      }
     }
     return res
   },

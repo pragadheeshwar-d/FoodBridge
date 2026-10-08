@@ -150,8 +150,14 @@ export default function AddDonationPage() {
       void (async () => {
         try {
           const res = await api.get('/services/geocode', { params: { q: query } })
-          await applyLocation(res.data.latitude, res.data.longitude)
-          setLocationStatus('manual')
+          const payload = res.data
+          const first = Array.isArray(payload) ? payload[0] : (payload?.data?.[0] || payload?.data || payload)
+          const lat = parseFloat(first?.latitude || first?.lat)
+          const lng = parseFloat(first?.longitude || first?.lon || first?.lng)
+          if (!isNaN(lat) && !isNaN(lng)) {
+            await applyLocation(lat, lng)
+            setLocationStatus('manual')
+          }
         } catch {
           // Leave the default center until the user searches or clicks manually.
         }
@@ -184,8 +190,8 @@ export default function AddDonationPage() {
     setPickupAddress(fallback)
     try {
       const res = await api.get('/services/reverse-geocode', { params: { lat, lng } })
-      const data = res.data
-      const resolved = data?.address || ''
+      const data = res.data?.data || res.data
+      const resolved = data?.address || data?.display_name || data?.formatted_address || ''
       if (resolved) {
         setAddressLabel(resolved)
         setPickupAddress(resolved)
@@ -202,8 +208,16 @@ export default function AddDonationPage() {
     if (!locationSearch.trim()) return
     try {
       const res = await api.get('/services/geocode', { params: { q: locationSearch } })
-      await applyLocation(res.data.latitude, res.data.longitude)
-      setLocationStatus('manual')
+      const payload = res.data
+      const first = Array.isArray(payload) ? payload[0] : (payload?.data?.[0] || payload?.data || payload)
+      const lat = parseFloat(first?.latitude || first?.lat)
+      const lng = parseFloat(first?.longitude || first?.lon || first?.lng)
+      if (!isNaN(lat) && !isNaN(lng)) {
+        await applyLocation(lat, lng)
+        setLocationStatus('manual')
+      } else {
+        toast('Could not find that address', 'error')
+      }
     } catch (error) {
       console.error('Location search failed', error)
       toast('Could not find that address', 'error')

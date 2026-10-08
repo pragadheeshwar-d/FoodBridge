@@ -19,6 +19,7 @@ import { Button } from '../../components/ui/Button'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../lib/api'
+import { donationService } from '../../services/donationService'
 import { createPickupRequest } from '../../services/pickupRequestService'
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { PublicProfileModal } from '../../components/profile/PublicProfileModal'
@@ -176,7 +177,19 @@ export default function ReceiverDonationsPage() {
           mode,
         },
       })
-      const items = (res.data.donations ?? []) as NearbyDonation[]
+      const payload = res.data
+      let items: NearbyDonation[] = []
+      if (Array.isArray(payload)) {
+        items = payload as NearbyDonation[]
+      } else if (Array.isArray(payload?.donations)) {
+        items = payload.donations as NearbyDonation[]
+      } else if (Array.isArray(payload?.data)) {
+        items = payload.data as NearbyDonation[]
+      }
+      if (items.length === 0) {
+        const fallback = await donationService.getAvailableDonations()
+        items = fallback as unknown as NearbyDonation[]
+      }
       setDonations(items)
       setSelectedDonationId((current) => {
         if (!current) return items[0]?.id ?? null

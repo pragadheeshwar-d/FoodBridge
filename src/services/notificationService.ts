@@ -18,31 +18,45 @@ export interface NotificationRecord {
 }
 
 export async function getNotifications(limit = 50): Promise<NotificationRecord[]> {
-  const res = await api.get('/notifications/', { params: { limit } })
-  // Normalise to include both casing
-  return res.data.map((n: any) => ({
-    ...n,
-    isRead: n.is_read,
-    createdAt: n.created_at ? new Date(n.created_at) : new Date(),
-    userId: String(n.user_id),
-  }))
+  try {
+    const res = await api.get('/notifications/', { params: { limit } })
+    const list = Array.isArray(res.data) ? res.data : (res.data?.data || res.data?.notifications || [])
+    return list.map((n: any) => ({
+      ...n,
+      isRead: Boolean(n.is_read || n.isRead),
+      createdAt: n.created_at ? new Date(n.created_at) : new Date(),
+      userId: String(n.user_id || n.userId || ''),
+    }))
+  } catch {
+    return []
+  }
 }
 
 export async function getUnreadCount(): Promise<number> {
-  const res = await api.get('/notifications/unread-count')
-  return res.data.unread_count
+  try {
+    const res = await api.get('/notifications/unread-count')
+    return Number(res.data?.count ?? res.data?.unread_count ?? (typeof res.data === 'number' ? res.data : 0))
+  } catch {
+    return 0
+  }
 }
 
 export async function markNotificationRead(id: string | number): Promise<void> {
-  await api.put(`/notifications/${id}/read`)
+  try {
+    await api.put(`/notifications/${id}/read`)
+  } catch {}
 }
 
 export async function markAllNotificationsRead(): Promise<void> {
-  await api.put('/notifications/read-all')
+  try {
+    await api.put('/notifications/read-all')
+  } catch {}
 }
 
 export async function deleteNotification(id: string | number): Promise<void> {
-  await api.delete(`/notifications/${id}`)
+  try {
+    await api.delete(`/notifications/${id}`)
+  } catch {}
 }
 
 /** Legacy compat: listenToNotifications used by useNotifications hook */

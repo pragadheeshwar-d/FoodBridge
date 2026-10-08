@@ -40,12 +40,14 @@ export default function AvailableFoodMapPage() {
 
   useEffect(() => {
     loadDonations()
+    const interval = setInterval(loadDonations, 3000)
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
         () => {}
       )
     }
+    return () => clearInterval(interval)
   }, [])
 
   const filteredDonations = useMemo(() => {

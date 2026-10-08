@@ -726,7 +726,7 @@ export default {
           timestamp: Date.now()
         });
 
-        return jsonResponse({ success: true, message: 'Donation posted successfully', data: donationItem }, 201);
+        return jsonResponse({ success: true, message: 'Donation posted successfully', data: donationItem, donation: donationItem }, 201);
       }
 
       // GET, PUT, DELETE /api/donations/:id
@@ -737,12 +737,12 @@ export default {
           const item = memoryStore.donations.find(d => d.id === dId);
           if (method === 'GET') {
             if (!item) return jsonResponse({ success: false, message: 'Donation not found' }, 404);
-            return jsonResponse({ success: true, data: item });
+            return jsonResponse({ success: true, data: item, donation: item });
           }
           if (method === 'PUT') {
             const body = await getBody();
             if (item) Object.assign(item, body);
-            return jsonResponse({ success: true, message: 'Donation updated successfully', data: item });
+            return jsonResponse({ success: true, message: 'Donation updated successfully', data: item, donation: item });
           }
           if (method === 'DELETE') {
             memoryStore.donations = memoryStore.donations.filter(d => d.id !== dId);
@@ -830,7 +830,7 @@ export default {
             timestamp: Date.now()
           });
 
-          return jsonResponse({ success: true, message: 'Pickup request created', data: pickupItem }, 201);
+          return jsonResponse({ success: true, message: 'Pickup request created', data: pickupItem, pickup_request: pickupItem }, 201);
         }
       }
 
@@ -1426,8 +1426,18 @@ export default {
       }
 
       if (path.startsWith('/api/chat/messages')) {
+        const parts = path.split('/');
+        const pId = parseInt(parts[parts.length - 1]);
+        const myId = currentUser ? currentUser.id : null;
+
         if (method === 'GET') {
-          return jsonResponse({ success: true, data: memoryStore.messages });
+          let msgs = memoryStore.messages;
+          if (!isNaN(pId)) {
+            msgs = msgs.filter(m => (m.sender_id === myId && m.receiver_id === pId) || (m.sender_id === pId && m.receiver_id === myId) || m.sender_id === pId || m.receiver_id === pId);
+          } else if (myId) {
+            msgs = msgs.filter(m => m.sender_id === myId || m.receiver_id === myId);
+          }
+          return jsonResponse({ success: true, data: msgs, messages: msgs });
         }
         if (method === 'POST') {
           const body = await getBody();
@@ -1476,7 +1486,7 @@ export default {
             created_at: new Date().toISOString()
           });
 
-          return jsonResponse({ success: true, message: 'Message sent successfully', data: newMsg });
+          return jsonResponse({ success: true, message: 'Message sent successfully', data: newMsg, chat_message: newMsg });
         }
       }
 
@@ -1486,13 +1496,17 @@ export default {
       }
 
       if (path === '/api/chat/conversations/lookup' || path.includes('/chat/conversations/lookup')) {
-        const partnerId = parseInt(url.searchParams.get('partnerId') || url.searchParams.get('partner_id') || url.searchParams.get('userId'));
-        const myId = currentUser ? currentUser.id : 2;
-        const partnerUser = memoryStore.users.find(u => u.id === partnerId);
-
-        if (!partnerUser) {
-          return jsonResponse({ success: true, data: { conversation: null }, conversation: null });
-        }
+        const body = method === 'POST' ? await getBody() : {};
+        const partnerId = parseInt(body.partner_id || body.partnerId || body.userId || url.searchParams.get('partnerId') || url.searchParams.get('partner_id') || url.searchParams.get('userId') || 2);
+        const myId = currentUser ? currentUser.id : (partnerId === 2 ? 3 : 2);
+        const partnerUser = memoryStore.users.find(u => u.id === partnerId) || {
+          id: partnerId,
+          name: partnerId === 2 ? 'City Bakery & Cafe' : 'Hope Charity Shelter',
+          organization: partnerId === 2 ? 'City Bakers Network' : 'Hope Charity Foundation',
+          role: partnerId === 2 ? 'donor' : 'receiver',
+          verified: true,
+          address: 'Chennai, Tamil Nadu',
+        };
 
         const partnerMsgs = memoryStore.messages.filter(
           m => (m.sender_id === myId && m.receiver_id === partnerId) || (m.sender_id === partnerId && m.receiver_id === myId)
