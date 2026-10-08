@@ -281,14 +281,68 @@ class MemoryStore {
       id: this.nextId.needs++,
       receiver_id: recvUser.id,
       receiver_name: recvUser.name,
-      organization: recvUser.organization,
+      receiver_organization: recvUser.organization,
+      food_name: 'Nutritious Dinner Meals & Rice',
       food_type: 'Cooked Meals',
-      quantity: '50 meals',
-      servings: 50,
-      location: recvUser.address,
-      urgency: 'high',
-      description: 'Require dinner meals for 50 residents at Hope Shelter tonight.',
-      status: 'open',
+      required_quantity: '50 meals',
+      quantity_number: 50,
+      remaining_quantity: 50,
+      unit: 'meals',
+      location: '45 Gandhi Road, T. Nagar, Chennai',
+      latitude: 13.0418,
+      longitude: 80.2341,
+      urgency: 'High',
+      required_time: new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
+      additional_notes: 'Require dinner meals for 50 shelter residents tonight.',
+      status: 'Open',
+      responses_count: 0,
+      responses: [],
+      created_at: new Date().toISOString()
+    });
+
+    this.needs.push({
+      id: this.nextId.needs++,
+      receiver_id: recvUser.id,
+      receiver_name: 'Anbu Illam Community Trust',
+      receiver_organization: 'Anbu Illam Community Trust',
+      food_name: 'Fresh Bread & Healthy Breakfast Packets',
+      food_type: 'Baked Goods / Breakfast',
+      required_quantity: '35 servings',
+      quantity_number: 35,
+      remaining_quantity: 35,
+      unit: 'servings',
+      location: '88 Trichy Road, Coimbatore',
+      latitude: 11.0016,
+      longitude: 76.9629,
+      urgency: 'Medium',
+      required_time: new Date(Date.now() + 18 * 3600 * 1000).toISOString(),
+      additional_notes: 'Breakfast packages needed for tomorrow morning distribution.',
+      status: 'Open',
+      responses_count: 0,
+      responses: [],
+      created_at: new Date().toISOString()
+    });
+
+    this.needs.push({
+      id: this.nextId.needs++,
+      receiver_id: recvUser.id,
+      receiver_name: 'Karuna Care Shelter',
+      receiver_organization: 'Karuna Care Foundation',
+      food_name: 'Emergency Hot Lunch & Dal',
+      food_type: 'Cooked Meals',
+      required_quantity: '60 meals',
+      quantity_number: 60,
+      remaining_quantity: 60,
+      unit: 'meals',
+      location: '124 Anna Salai, Chennai',
+      latitude: 13.0827,
+      longitude: 80.2707,
+      urgency: 'Critical',
+      required_time: new Date(Date.now() + 4 * 3600 * 1000).toISOString(),
+      additional_notes: 'Urgent hot lunch needed for community drive.',
+      status: 'Open',
+      responses_count: 0,
+      responses: [],
       created_at: new Date().toISOString()
     });
 
@@ -915,36 +969,177 @@ export default {
 
       if (path === '/api/needs' || path === '/api/needs/my') {
         if (method === 'GET') {
-          return jsonResponse({ success: true, data: memoryStore.needs, needs: memoryStore.needs });
+          const isMy = path.endsWith('/my');
+          let list = [...memoryStore.needs];
+
+          if (isMy && currentUser) {
+            list = list.filter(n => String(n.receiver_id) === String(currentUser.id));
+          }
+
+          const urgencyParam = url.searchParams.get('urgency');
+          const foodTypeParam = url.searchParams.get('food_type');
+          const searchParam = (url.searchParams.get('search') || '').toLowerCase().trim();
+          const statusParam = url.searchParams.get('status');
+
+          if (urgencyParam && urgencyParam !== 'all') {
+            list = list.filter(n => (n.urgency || '').toLowerCase() === urgencyParam.toLowerCase());
+          }
+          if (foodTypeParam && foodTypeParam !== 'all') {
+            list = list.filter(n => (n.food_type || '').toLowerCase().includes(foodTypeParam.toLowerCase()));
+          }
+          if (statusParam && statusParam !== 'all') {
+            list = list.filter(n => (n.status || '').toLowerCase() === statusParam.toLowerCase());
+          }
+          if (searchParam) {
+            list = list.filter(n =>
+              (n.food_name && n.food_name.toLowerCase().includes(searchParam)) ||
+              (n.food_type && n.food_type.toLowerCase().includes(searchParam)) ||
+              (n.location && n.location.toLowerCase().includes(searchParam)) ||
+              (n.receiver_name && n.receiver_name.toLowerCase().includes(searchParam)) ||
+              (n.receiver_organization && n.receiver_organization.toLowerCase().includes(searchParam))
+            );
+          }
+
+          return jsonResponse({ success: true, data: list, needs: list });
         }
+
         if (method === 'POST') {
           const body = await getBody();
+          const reqQty = body.required_quantity || body.quantity || '25 meals';
+          const qtyNum = parseFloat(body.quantity_number || body.servings || body.quantity || reqQty) || 25;
+          const uStr = (body.urgency || 'High').toLowerCase();
+          const formattedUrgency = uStr.charAt(0).toUpperCase() + uStr.slice(1);
+
           const item = {
             id: memoryStore.nextId.needs++,
             receiver_id: currentUser ? currentUser.id : 3,
             receiver_name: currentUser ? currentUser.name : 'Hope Shelter NGO',
-            ...body,
-            status: 'open',
+            receiver_organization: (currentUser && currentUser.organization) || 'Hope Charity Foundation',
+            food_name: body.food_name || body.food_type || 'Cooked Meals',
+            food_type: body.food_type || 'Cooked Meals',
+            required_quantity: String(reqQty),
+            quantity_number: qtyNum,
+            remaining_quantity: qtyNum,
+            unit: body.unit || 'meals',
+            urgency: formattedUrgency,
+            location: body.location || (currentUser ? currentUser.address : '45 Gandhi Road, Chennai'),
+            latitude: (typeof body.latitude === 'number' && !isNaN(body.latitude)) ? body.latitude : 13.0827,
+            longitude: (typeof body.longitude === 'number' && !isNaN(body.longitude)) ? body.longitude : 80.2707,
+            required_time: body.required_time || new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
+            additional_notes: body.additional_notes || body.description || '',
+            status: 'Open',
+            responses_count: 0,
+            responses: [],
             created_at: new Date().toISOString()
           };
           memoryStore.needs.unshift(item);
-          return jsonResponse({ success: true, message: 'Need posted successfully', data: item });
+
+          // Notify Donors
+          memoryStore.notifications.unshift({
+            id: memoryStore.nextId.notifications++,
+            user_id: 2,
+            title: 'New Food Requirement Near You',
+            message: `${item.receiver_organization || item.receiver_name} requested ${item.required_quantity} (${item.food_name}).`,
+            type: 'need',
+            is_read: false,
+            created_at: new Date().toISOString()
+          });
+
+          return jsonResponse({ success: true, message: 'Need posted successfully', data: item }, 201);
         }
       }
 
       if (path.startsWith('/api/needs/')) {
         const parts = path.split('/');
-        const nId = parseInt(parts[parts.length - 1]);
-        if (method === 'DELETE') {
+        const nId = parseInt(parts[3] || parts[parts.length - 1]);
+        const need = memoryStore.needs.find(n => n.id === nId);
+
+        if (path.endsWith('/respond') && (method === 'POST' || method === 'PUT')) {
+          const body = await getBody();
+          const offeredQty = parseFloat(body.offered_quantity || body.quantity || 1);
+          const respItem = {
+            id: Math.floor(Math.random() * 90000) + 10000,
+            need_id: nId,
+            donor_id: currentUser ? currentUser.id : 2,
+            donor_name: currentUser ? currentUser.name : 'City Bakery & Cafe',
+            donor_organization: (currentUser && currentUser.organization) || 'City Bakers Network',
+            offered_quantity: offeredQty,
+            unit: (need && need.unit) || 'servings',
+            delivery_type: body.delivery_type || 'Pickup by NGO',
+            message: body.message || 'We can fulfill your food requirement.',
+            status: 'Pending',
+            created_at: new Date().toISOString()
+          };
+
+          if (need) {
+            if (!need.responses) need.responses = [];
+            need.responses.unshift(respItem);
+            need.responses_count = need.responses.length;
+
+            // Notify receiver
+            memoryStore.notifications.unshift({
+              id: memoryStore.nextId.notifications++,
+              user_id: need.receiver_id || 3,
+              title: 'Food Offer Received!',
+              message: `${respItem.donor_name} offered ${offeredQty} ${respItem.unit} for your requirement.`,
+              type: 'offer',
+              is_read: false,
+              created_at: new Date().toISOString()
+            });
+          }
+
+          return jsonResponse({ success: true, message: 'Food offer sent successfully! The receiver has been notified.', data: respItem });
+        }
+
+        if (method === 'GET' && !isNaN(nId)) {
+          if (!need) return jsonResponse({ success: false, message: 'Need not found' }, 404);
+          return jsonResponse({ success: true, data: need, need });
+        }
+
+        if (method === 'DELETE' && !isNaN(nId)) {
           memoryStore.needs = memoryStore.needs.filter(n => n.id !== nId);
           return jsonResponse({ success: true, message: 'Need deleted successfully' });
-        }
-        if (path.includes('/respond')) {
-          return jsonResponse({ success: true, message: 'Response sent to need successfully' });
         }
       }
 
       if (path.startsWith('/api/needs/responses/')) {
+        const parts = path.split('/');
+        const rId = parseInt(parts[parts.length - 2]);
+        const isAccept = path.endsWith('/accept');
+        const isDecline = path.endsWith('/decline');
+        const isCollect = path.endsWith('/confirm-receipt');
+
+        for (const nd of memoryStore.needs) {
+          if (nd.responses) {
+            const resp = nd.responses.find(r => r.id === rId);
+            if (resp) {
+              if (isAccept) {
+                resp.status = 'Accepted';
+                nd.status = 'Partially Fulfilled';
+                nd.remaining_quantity = Math.max(0, (nd.remaining_quantity || nd.quantity_number) - resp.offered_quantity);
+                if (nd.remaining_quantity === 0) nd.status = 'Fulfilled';
+
+                // Notify donor
+                memoryStore.notifications.unshift({
+                  id: memoryStore.nextId.notifications++,
+                  user_id: resp.donor_id || 2,
+                  title: 'Food Offer Accepted!',
+                  message: `${nd.receiver_organization || nd.receiver_name} accepted your offer of ${resp.offered_quantity} ${resp.unit}.`,
+                  type: 'offer_accepted',
+                  is_read: false,
+                  created_at: new Date().toISOString()
+                });
+              } else if (isDecline) {
+                resp.status = 'Declined';
+              } else if (isCollect) {
+                resp.status = 'Completed';
+                nd.status = 'Fulfilled';
+              }
+              return jsonResponse({ success: true, message: 'Action processed successfully', data: resp });
+            }
+          }
+        }
+
         return jsonResponse({ success: true, message: 'Need action completed successfully' });
       }
 

@@ -53,8 +53,14 @@ export default function FoodNeedsMapPage() {
   // Filtered Needs
   const filteredNeeds = useMemo(() => {
     return needs.filter((n) => {
-      if (activeFilter === 'urgent') return n.urgency === 'Critical' || n.urgency === 'High'
-      if (activeFilter === 'meals') return n.food_type.toLowerCase().includes('meal') || n.food_type.toLowerCase().includes('rice')
+      if (activeFilter === 'urgent') {
+        const u = (n.urgency || '').toLowerCase()
+        return u === 'critical' || u === 'high'
+      }
+      if (activeFilter === 'meals') {
+        const t = (n.food_type || n.food_name || '').toLowerCase()
+        return t.includes('meal') || t.includes('rice') || t.includes('biryani') || t.includes('lunch') || t.includes('dinner')
+      }
       return true
     })
   }, [needs, activeFilter])
@@ -86,15 +92,23 @@ export default function FoodNeedsMapPage() {
 
   const markers: MapMarker[] = useMemo(() => {
     return filteredNeeds
-      .filter((need) => typeof need.latitude === 'number' && typeof need.longitude === 'number' && !isNaN(need.latitude) && !isNaN(need.longitude))
-      .map((need) => ({
-        id: need.id.toString(),
-        lat: Number(need.latitude),
-        lng: Number(need.longitude),
-        label: need.food_name || need.food_type,
-        icon: bluePinIcon,
-        onClick: () => setSelectedNeed(need),
-      }))
+      .map((need, idx) => {
+        let lat = Number(need.latitude)
+        let lng = Number(need.longitude)
+        if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
+          // Fallback based on known Chennai centers if missing
+          lat = 13.0827 + (idx * 0.015)
+          lng = 80.2707 + (idx * 0.012)
+        }
+        return {
+          id: need.id.toString(),
+          lat,
+          lng,
+          label: need.food_name || need.food_type,
+          icon: bluePinIcon,
+          onClick: () => setSelectedNeed(need),
+        }
+      })
   }, [filteredNeeds, bluePinIcon])
 
   const mapCenter = useMemo<[number, number]>(() => {
@@ -156,7 +170,7 @@ export default function FoodNeedsMapPage() {
           {/* Quick Filter Pills */}
           <div className="flex items-center gap-2 overflow-x-auto">
             {[
-              { id: 'all', label: 'All Needs (🔵)' },
+              { id: 'all', label: `All Needs (${needs.length})` },
               { id: 'urgent', label: '🔥 Urgent Needs' },
               { id: 'meals', label: '🍚 Cooked Meals' },
             ].map((f) => (
