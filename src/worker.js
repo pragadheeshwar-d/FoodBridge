@@ -665,7 +665,7 @@ export default {
       // --- 4. DONATIONS ENDPOINTS ---
 
       // GET /api/donations/nearby & GET /api/donations/available & GET /api/donations
-      if (path === '/api/donations/nearby' || path === '/api/donations/available' || path === '/api/donations') {
+      if (method === 'GET' && (path === '/api/donations/nearby' || path === '/api/donations/available' || path === '/api/donations')) {
         const donorIdParam = url.searchParams.get('donor_id');
         let list = [...memoryStore.donations];
 
