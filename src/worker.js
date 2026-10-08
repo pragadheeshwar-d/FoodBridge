@@ -137,8 +137,9 @@ class MemoryStore {
     this.needs = [];
     this.notifications = [];
     this.messages = [];
+    this.signals = [];
     this.settings = {};
-    this.nextId = { users: 1, donations: 1, pickups: 1, needs: 1, notifications: 1, messages: 1 };
+    this.nextId = { users: 1, donations: 1, pickups: 1, needs: 1, notifications: 1, messages: 1, signals: 1 };
     this.initialized = false;
   }
 
@@ -891,43 +892,84 @@ export default {
       // --- 9. CHAT & MESSAGING ENDPOINTS ---
 
       if (path === '/api/chat/conversations') {
-        return jsonResponse({
-          success: true,
-          data: [
-            {
-              id: 1,
-              partner_id: 2,
-              partner_name: 'City Bakery & Cafe',
-              partner_role: 'donor',
-              last_message: 'Hello! The food packages are ready for pickup.',
-              unread_count: 0,
-              updated_at: new Date().toISOString()
-            }
-          ]
-        });
+        const donorUser = memoryStore.users.find(u => u.role === 'donor') || memoryStore.users[1];
+        const recvUser = memoryStore.users.find(u => u.role === 'receiver') || memoryStore.users[2];
+        const lastMsg = memoryStore.messages[memoryStore.messages.length - 1] || {
+          message: 'Hello! The food packages are ready for pickup.',
+          created_at: new Date().toISOString()
+        };
+
+        const isCurrentDonor = currentUser ? currentUser.role === 'donor' : false;
+        const partnerUser = isCurrentDonor ? recvUser : donorUser;
+
+        const convList = [
+          {
+            id: 1,
+            donor_id: donorUser.id,
+            receiver_id: recvUser.id,
+            partner: {
+              id: partnerUser.id,
+              name: partnerUser.name,
+              organization: partnerUser.organization,
+              role: partnerUser.role,
+              verified: true,
+              address: partnerUser.address,
+              business_type: isCurrentDonor ? 'Charity Shelter' : 'Bakery & Restaurant'
+            },
+            donation: memoryStore.donations[0],
+            pickup: memoryStore.pickups[0],
+            last_message: lastMsg,
+            unread_count: 0,
+            updated_at: lastMsg.created_at || new Date().toISOString()
+          }
+        ];
+
+        return jsonResponse({ success: true, data: convList, conversations: convList });
       }
 
       if (path.startsWith('/api/chat/conversations/') && path.endsWith('/messages')) {
-        return jsonResponse({
-          success: true,
-          data: [
-            { id: 1, sender_id: 2, sender_name: 'City Bakery & Cafe', text: 'Hello! The food packages are ready for pickup at 124 Anna Salai.', created_at: new Date(Date.now() - 1800000).toISOString() }
-          ]
-        });
+        const parts = path.split('/');
+        const convId = parseInt(parts[parts.length - 2]);
+        const msgs = memoryStore.messages.filter(m => !convId || String(m.conversation_id) === String(convId) || convId === 1);
+        return jsonResponse({ success: true, data: msgs, messages: msgs });
       }
 
       if (path.startsWith('/api/chat/messages')) {
         if (method === 'GET') {
-          return jsonResponse({
-            success: true,
-            data: [
-              { id: 1, sender_id: 2, text: 'Your pickup request has been accepted!', created_at: new Date().toISOString() }
-            ]
-          });
+          return jsonResponse({ success: true, data: memoryStore.messages });
         }
         if (method === 'POST') {
           const body = await getBody();
-          return jsonResponse({ success: true, message: 'Message sent successfully', data: { id: Date.now(), ...body, created_at: new Date().toISOString() } });
+          const senderId = currentUser ? currentUser.id : (body.sender_id || 2);
+          const senderUser = memoryStore.users.find(u => u.id === senderId);
+          const receiverId = body.receiver_id || (senderId === 2 ? 3 : 2);
+          const receiverUser = memoryStore.users.find(u => u.id === receiverId);
+
+          const newMsg = {
+            id: memoryStore.nextId.messages++,
+            conversation_id: body.conversation_id || 1,
+            sender_id: senderId,
+            sender_name: senderUser ? senderUser.name : 'FoodBridge Member',
+            sender_role: senderUser ? senderUser.role : 'donor',
+            receiver_id: receiverId,
+            receiver_name: receiverUser ? receiverUser.name : 'Partner',
+            receiver_role: receiverUser ? receiverUser.role : 'receiver',
+            message: body.message || body.text || '',
+            created_at: new Date().toISOString()
+          };
+
+          memoryStore.messages.push(newMsg);
+
+          // Push real-time event into signaling queue for callee / partner
+          memoryStore.signals.push({
+            id: memoryStore.nextId.signals++,
+            event: 'new_message',
+            payload: newMsg,
+            target_id: receiverId,
+            timestamp: Date.now()
+          });
+
+          return jsonResponse({ success: true, message: 'Message sent successfully', data: newMsg });
         }
       }
 
@@ -936,12 +978,87 @@ export default {
         return jsonResponse({ success: true, data: usersList });
       }
 
-      if (path.includes('/api/chat/conversations/lookup')) {
-        return jsonResponse({ success: true, data: { conversation_id: 1 } });
+      if (path === '/api/chat/conversations/lookup' || path.includes('/chat/conversations/lookup')) {
+        const donorUser = memoryStore.users.find(u => u.role === 'donor') || memoryStore.users[1];
+        const recvUser = memoryStore.users.find(u => u.role === 'receiver') || memoryStore.users[2];
+        const lastMsg = memoryStore.messages[memoryStore.messages.length - 1] || {
+          message: 'Hello! The food packages are ready for pickup.',
+          created_at: new Date().toISOString()
+        };
+        const isCurrentDonor = currentUser ? currentUser.role === 'donor' : false;
+        const partnerUser = isCurrentDonor ? recvUser : donorUser;
+
+        const conv = {
+          id: 1,
+          donor_id: donorUser.id,
+          receiver_id: recvUser.id,
+          partner: {
+            id: partnerUser.id,
+            name: partnerUser.name,
+            organization: partnerUser.organization,
+            role: partnerUser.role,
+            verified: true,
+            address: partnerUser.address,
+            business_type: isCurrentDonor ? 'Charity Shelter' : 'Bakery & Restaurant'
+          },
+          donation: memoryStore.donations[0],
+          pickup: memoryStore.pickups[0],
+          last_message: lastMsg,
+          unread_count: 0,
+          updated_at: new Date().toISOString()
+        };
+        return jsonResponse({ success: true, data: { conversation: conv }, conversation: conv });
       }
 
       if (path.includes('/api/chat/conversations/') && path.endsWith('/read')) {
         return jsonResponse({ success: true, message: 'Marked as read' });
+      }
+
+      // --- WEBRTC CALLING & REAL-TIME SIGNALING ---
+
+      if (path === '/api/call/signal') {
+        if (method === 'POST') {
+          const body = await getBody();
+          const evt = body.event;
+          const p = body.payload || {};
+          const senderId = body.sender_id || (currentUser ? currentUser.id : null);
+          const targetId = p.receiver_id || p.partner_id || (senderId == 2 ? 3 : 2);
+
+          const signalItem = {
+            id: memoryStore.nextId.signals++,
+            event: evt,
+            payload: {
+              ...p,
+              caller_id: senderId,
+              caller_name: currentUser ? currentUser.name : (senderId == 2 ? 'City Bakery & Cafe' : 'Hope Charity Shelter'),
+              caller_role: currentUser ? currentUser.role : (senderId == 2 ? 'donor' : 'receiver'),
+              caller_avatar: null
+            },
+            sender_id: senderId,
+            target_id: targetId,
+            timestamp: Date.now()
+          };
+
+          memoryStore.signals.push(signalItem);
+
+          if (memoryStore.signals.length > 100) {
+            memoryStore.signals = memoryStore.signals.slice(-100);
+          }
+
+          return jsonResponse({ success: true, signal_id: signalItem.id });
+        }
+
+        if (method === 'GET') {
+          const userId = url.searchParams.get('user_id');
+          const since = parseInt(url.searchParams.get('since') || '0');
+
+          let matching = memoryStore.signals.filter(s => s.id > since);
+          if (userId) {
+            matching = matching.filter(s => !s.target_id || String(s.target_id) === String(userId) || String(s.target_id) === 'all');
+          }
+
+          return jsonResponse({ success: true, events: matching });
+        }
       }
 
       // --- 10. NOTIFICATIONS ENDPOINTS ---
