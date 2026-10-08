@@ -1,0 +1,46 @@
+databases:
+  - name: foodbridge-db
+    databaseName: foodbridge
+    user: foodbridge
+    plan: free
+
+services:
+  - type: web
+    name: foodbridge-api
+    runtime: python
+    plan: free
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:$PORT run:app
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: foodbridge-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: FLASK_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: https://food-bridge-sage.vercel.app
+      - key: MAIL_SERVER
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USE_TLS
+        value: "True"
+      - key: MAIL_USE_SSL
+        value: "False"
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_DEFAULT_SENDER
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false

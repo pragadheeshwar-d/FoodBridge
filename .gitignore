@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+backend/venv/
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+
+# Build output
+dist/
+dist.zip
+FoodBridge-Admin/dist/
+
+# Environment files (NEVER commit secrets)
+.env
+backend/.env
+FoodBridge-Admin/.env
+
+# Vercel & Cloudflare
+.vercel/
+FoodBridge-Admin/.vercel/
+.wrangler/
+
+# Uploads (runtime)
+backend/uploads/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+dev.log
+dev.err.log
+
+# IDE
+.vscode/
+.idea/
+*.local
+
+# Local SQLite / Instance
+backend/instance/
+*.db
+*.sqlite
+.vercel
+.env*
