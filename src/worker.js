@@ -357,6 +357,7 @@ export default {
           message: 'FoodBridge Cloudflare Edge API 24/7 is fully operational',
           data: {
             service: 'FoodBridge Cloudflare Edge API',
+            version: '1.2.0-all-apis',
             status: 'online',
             edge: true,
             database: env.DB ? 'Cloudflare D1 SQL' : 'Cloudflare Edge Store',
