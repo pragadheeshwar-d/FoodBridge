@@ -1011,11 +1011,36 @@ export default {
           const uStr = (body.urgency || 'High').toLowerCase();
           const formattedUrgency = uStr.charAt(0).toUpperCase() + uStr.slice(1);
 
+          let lat = parseFloat(body.latitude);
+          let lng = parseFloat(body.longitude);
+          const locStr = body.location || (currentUser ? currentUser.address : '');
+
+          if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
+            if (locStr) {
+              try {
+                const gRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locStr)}&limit=1`, {
+                  headers: { 'User-Agent': 'FoodBridge-Edge/1.0' }
+                });
+                if (gRes.ok) {
+                  const gData = await gRes.json();
+                  if (Array.isArray(gData) && gData.length > 0) {
+                    lat = parseFloat(gData[0].lat);
+                    lng = parseFloat(gData[0].lon);
+                  }
+                }
+              } catch {}
+            }
+          }
+          if (isNaN(lat) || isNaN(lng)) {
+            lat = 10.8698;
+            lng = 76.9272;
+          }
+
           const item = {
             id: memoryStore.nextId.needs++,
             receiver_id: currentUser ? currentUser.id : 3,
-            receiver_name: currentUser ? currentUser.name : 'Hope Shelter NGO',
-            receiver_organization: (currentUser && currentUser.organization) || 'Hope Charity Foundation',
+            receiver_name: currentUser ? currentUser.name : (body.receiver_name || 'Hope Shelter NGO'),
+            receiver_organization: (currentUser && currentUser.organization) || body.organization || (currentUser ? currentUser.name : 'Hope Charity Foundation'),
             food_name: body.food_name || body.food_type || 'Cooked Meals',
             food_type: body.food_type || 'Cooked Meals',
             required_quantity: String(reqQty),
@@ -1023,9 +1048,9 @@ export default {
             remaining_quantity: qtyNum,
             unit: body.unit || 'meals',
             urgency: formattedUrgency,
-            location: body.location || (currentUser ? currentUser.address : '45 Gandhi Road, Chennai'),
-            latitude: (typeof body.latitude === 'number' && !isNaN(body.latitude)) ? body.latitude : 13.0827,
-            longitude: (typeof body.longitude === 'number' && !isNaN(body.longitude)) ? body.longitude : 80.2707,
+            location: locStr || 'Coimbatore, Tamil Nadu, India',
+            latitude: lat,
+            longitude: lng,
             required_time: body.required_time || new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
             additional_notes: body.additional_notes || body.description || '',
             status: 'Open',
@@ -1044,6 +1069,29 @@ export default {
             type: 'need',
             is_read: false,
             created_at: new Date().toISOString()
+          });
+
+          // Realtime signal broadcast
+          memoryStore.signals.push({
+            id: memoryStore.nextId.signals++,
+            event: 'new_need',
+            payload: item,
+            target_id: null,
+            timestamp: Date.now()
+          });
+          memoryStore.signals.push({
+            id: memoryStore.nextId.signals++,
+            event: 'need_created',
+            payload: item,
+            target_id: null,
+            timestamp: Date.now()
+          });
+          memoryStore.signals.push({
+            id: memoryStore.nextId.signals++,
+            event: 'dashboard_updated',
+            payload: {},
+            target_id: null,
+            timestamp: Date.now()
           });
 
           return jsonResponse({ success: true, message: 'Need posted successfully', data: item }, 201);

@@ -17,6 +17,7 @@ import { Button } from '../../components/ui/Button'
 import { PublicProfileModal } from '../../components/profile/PublicProfileModal'
 import { RespondToNeedModal } from '../../components/donor/RespondToNeedModal'
 import { ViewFoodNeedModal } from '../../components/donor/ViewFoodNeedModal'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 
 export default function FoodNeedsMapPage() {
   const [needs, setNeeds] = useState<FoodNeed[]>([])
@@ -40,14 +41,22 @@ export default function FoodNeedsMapPage() {
     }
   }
 
+  useRealtimeSync(['new_need', 'need_created', 'need_updated', 'dashboard_updated'], loadNeeds)
+
   useEffect(() => {
     loadNeeds()
+    const pollInterval = setInterval(() => {
+      loadNeeds()
+    }, 3000)
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
         () => {}
       )
     }
+
+    return () => clearInterval(pollInterval)
   }, [])
 
   // Filtered Needs

@@ -15,6 +15,7 @@ import { needService, type FoodNeed } from '../../services/needService'
 import { PublicProfileModal } from '../../components/profile/PublicProfileModal'
 import { RespondToNeedModal } from '../../components/donor/RespondToNeedModal'
 import { ViewFoodNeedModal } from '../../components/donor/ViewFoodNeedModal'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 
 export default function FoodNeedsPage() {
   const [needs, setNeeds] = useState<FoodNeed[]>([])
@@ -28,7 +29,6 @@ export default function FoodNeedsPage() {
   const [selectedNeedForDetails, setSelectedNeedForDetails] = useState<FoodNeed | null>(null)
 
   const loadNeeds = async () => {
-    setLoading(true)
     try {
       const data = await needService.getNeeds({
         search: search || undefined,
@@ -42,8 +42,14 @@ export default function FoodNeedsPage() {
     }
   }
 
+  useRealtimeSync(['new_need', 'need_created', 'need_updated', 'dashboard_updated'], loadNeeds)
+
   useEffect(() => {
     loadNeeds()
+    const pollInterval = setInterval(() => {
+      loadNeeds()
+    }, 4000)
+    return () => clearInterval(pollInterval)
   }, [urgencyFilter])
 
   const handleSearchSubmit = (e: React.FormEvent) => {
