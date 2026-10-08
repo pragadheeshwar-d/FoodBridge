@@ -435,7 +435,7 @@ export default {
           }
 
           const hashed = await hashPassword(password);
-          const verificationToken = crypto.randomUUID();
+          const verificationToken = await createJWT({ email: email.toLowerCase().trim(), name, role, type: 'verify' });
           const verificationExpiry = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
           let newUser = null;
 
@@ -546,9 +546,17 @@ export default {
           return jsonResponse({ success: false, message: 'Verification token is required' }, 400);
         }
 
+        // Try cryptographic JWT verification first (works across all distributed edge instances)
+        const tokenPayload = await verifyJWT(vToken);
+        const tokenEmail = (tokenPayload && tokenPayload.email) ? tokenPayload.email.toLowerCase().trim() : null;
+
         let user = null;
         if (env.DB) {
-          user = await env.DB.prepare("SELECT * FROM users WHERE verification_token = ?").bind(vToken).first();
+          if (tokenEmail) {
+            user = await env.DB.prepare("SELECT * FROM users WHERE LOWER(email) = ?").bind(tokenEmail).first();
+          } else {
+            user = await env.DB.prepare("SELECT * FROM users WHERE verification_token = ?").bind(vToken).first();
+          }
           if (user) {
             await env.DB.prepare(
               "UPDATE users SET verified = 1, status = 'approved', account_status = 'approved', verification_status = 'VERIFIED', verification_token = NULL, verification_expiry = NULL WHERE id = ?"
@@ -559,7 +567,7 @@ export default {
             user.verification_status = 'VERIFIED';
           }
         } else {
-          user = memoryStore.users.find(u => u.verification_token === vToken);
+          user = memoryStore.users.find(u => (tokenEmail && u.email.toLowerCase() === tokenEmail) || u.verification_token === vToken);
           if (user) {
             user.verified = true;
             user.status = 'approved';
@@ -567,14 +575,32 @@ export default {
             user.verification_status = 'VERIFIED';
             user.verification_token = null;
             user.verification_expiry = null;
+          } else if (tokenEmail) {
+            user = {
+              id: memoryStore.nextId.users++,
+              name: tokenPayload.name || tokenEmail.split('@')[0],
+              email: tokenEmail,
+              role: tokenPayload.role || 'donor',
+              organization: 'FoodBridge Partner',
+              phone: '',
+              address: '',
+              verified: true,
+              status: 'approved',
+              account_status: 'approved',
+              verification_status: 'VERIFIED',
+              created_at: new Date().toISOString()
+            };
+            memoryStore.users.push(user);
           }
         }
 
-        if (!user) {
+        if (!user && !tokenPayload) {
           return jsonResponse({ success: false, message: 'Invalid or expired verification token' }, 400);
         }
 
-        const { password: _, ...cleanUser } = user;
+        const cleanUser = user ? { ...user } : { email: tokenEmail, verified: true, status: 'approved' };
+        delete cleanUser.password;
+
         return jsonResponse({
           success: true,
           message: 'Email verified successfully! You can now access your FoodBridge account.',
