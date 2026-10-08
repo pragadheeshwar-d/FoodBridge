@@ -766,7 +766,7 @@ export default {
 
       // --- 5. PICKUP REQUESTS & PICKUPS ENDPOINTS ---
 
-      if (path === '/api/pickup-requests' || path === '/api/pickups') {
+      if (path === '/api/pickup-requests' || path === '/api/pickups' || path === '/api/pickups/request') {
         if (method === 'GET') {
           return jsonResponse({ success: true, data: memoryStore.pickups, requests: memoryStore.pickups });
         }
