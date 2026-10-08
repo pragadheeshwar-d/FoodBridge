@@ -350,6 +350,31 @@ export async function fetchConversations(currentUserId?: string): Promise<ChatCo
     }
   }
 
+  // If no conversations yet, add verified coordination partner
+  if (partnerMap.size === 0) {
+    const defaultPartnerId = myId === '2' ? '3' : '2'
+    const defaultPartnerName = myId === '2' ? 'Hope Charity Shelter' : 'City Bakery & Cafe'
+    const defaultOrg = myId === '2' ? 'Hope Charity Foundation' : 'City Bakers Network'
+    const defaultRole = myId === '2' ? 'receiver' : 'donor'
+
+    partnerMap.set(defaultPartnerId, {
+      id: defaultPartnerId,
+      donor_id: defaultRole === 'donor' ? defaultPartnerId : myId,
+      receiver_id: defaultRole === 'receiver' ? defaultPartnerId : myId,
+      partner: {
+        id: defaultPartnerId,
+        name: defaultPartnerName,
+        organization: defaultOrg,
+        role: defaultRole,
+        verified: true,
+        address: 'Chennai, Tamil Nadu',
+      },
+      last_message: null,
+      unread_count: 0,
+      updated_at: new Date().toISOString(),
+    })
+  }
+
   return Array.from(partnerMap.values()).map((c: any) => normalizeConversation(c, currentUserId))
 }
 
