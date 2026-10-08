@@ -610,17 +610,20 @@ export default {
 
       // --- 3. ADMIN PORTAL ENDPOINTS ---
 
-      // GET /api/admin/stats
-      if (path === '/api/admin/stats') {
+      // GET /api/admin/stats & GET /api/admin/overview
+      if (path === '/api/admin/stats' || path === '/api/admin/overview') {
         const allUsers = memoryStore.users;
         const stats = {
           totalUsers: allUsers.length,
+          total_users: allUsers.length,
+          total_donations: memoryStore.donations.length,
+          total_pickups: memoryStore.pickups.length,
           pendingApprovals: allUsers.filter(u => u.status === 'pending' || u.status === 'Pending').length,
           approvedUsers: allUsers.filter(u => u.status === 'approved' || u.status === 'Approved').length,
           rejectedUsers: allUsers.filter(u => u.status === 'rejected' || u.status === 'Rejected').length,
           emailVerifiedUsers: allUsers.filter(u => u.verified === 1 || u.verified === true).length,
         };
-        return jsonResponse({ success: true, data: stats });
+        return jsonResponse({ success: true, data: stats, overview: stats });
       }
 
       // GET /api/admin/users
